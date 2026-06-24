@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "p2p-arb-bot"
+version = "0.1.0"
+description = "Monitor (solo aviso) de arbitraje P2P Binance USDT/VES con arquitectura limpia"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "curl_cffi>=0.7",
+    "rich>=13.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+p2p-arb-bot = "p2p_arb_bot.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

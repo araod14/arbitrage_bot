@@ -1,0 +1,33 @@
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Caché de herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Configuración local y secretos (NO commitear credenciales)
+.env
+
+# Datos generados en runtime
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Editores / SO
+.idea/
+.vscode/
+*.swp
+.DS_Store

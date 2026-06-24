@@ -1,0 +1,23 @@
+services:
+  bot:
+    build: .
+    image: p2p-arb-bot
+    container_name: p2p-arb-bot
+    # Toma los valores de .env (crea uno con `make env` o `cp .env.example .env`).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # En contenedor el bot corre sin prompts; la config viene del entorno.
+      NO_INPUT: "true"
+    volumes:
+      # Persiste la base de datos SQLite y los logs entre reinicios.
+      - arb-data:/data
+    restart: unless-stopped
+    # Permiten correr en modo interactivo con `docker compose run --rm bot`
+    # (p. ej. para descubrir métodos de pago manualmente con NO_INPUT=false).
+    stdin_open: true
+    tty: true
+
+volumes:
+  arb-data:
