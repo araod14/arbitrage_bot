@@ -10,6 +10,10 @@ services:
     environment:
       # En contenedor el bot corre sin prompts; la config viene del entorno.
       NO_INPUT: "true"
+      # La DB y los logs van al volumen persistente (/data), no a la capa
+      # efímera del contenedor (/app). Así sobreviven a recreaciones.
+      DB_PATH: "/data/opportunities.db"
+      LOG_PATH: "/data/p2p_arb_bot.log"
     volumes:
       # Persiste la base de datos SQLite y los logs entre reinicios.
       - arb-data:/data
