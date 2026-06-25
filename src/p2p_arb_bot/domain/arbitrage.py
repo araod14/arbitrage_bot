@@ -32,11 +32,49 @@ def accepts_amount(ad: Ad, max_usdt: Decimal, ref_price: Decimal) -> bool:
     return ad.min_amount <= amount <= ad.max_amount
 
 
-def _eligible(ads: Iterable[Ad], method: str, max_usdt: Decimal) -> list[Ad]:
-    """Filtra anuncios por método de pago y por que acepten el monto.
+def _median_price(ads: list[Ad]) -> Decimal:
+    """Mediana de los precios de una lista no vacía de anuncios."""
+    prices = sorted(a.price for a in ads)
+    n = len(prices)
+    mid = n // 2
+    if n % 2 == 1:
+        return prices[mid]
+    return (prices[mid - 1] + prices[mid]) / Decimal("2")
+
+
+def drop_outliers(ads: list[Ad], max_dev_pct: Decimal) -> list[Ad]:
+    """Descarta anuncios cuyo precio se desvía más de ``max_dev_pct`` de la mediana.
+
+    Protege contra anuncios "cebo": precios absurdos muy por encima (en venta) o
+    por debajo (en compra) del mercado que, sin este filtro, serían elegidos como
+    mejor compra/venta e inflarían el spread con oportunidades falsas.
+
+    ``max_dev_pct <= 0`` desactiva el filtro. Con menos de 3 anuncios no se filtra
+    (la mediana no es fiable para distinguir el outlier). Si el filtro dejara la
+    lista vacía, se devuelve la original sin tocar (defensa ante configs extremas).
+    """
+    if max_dev_pct <= 0 or len(ads) < 3:
+        return ads
+    median = _median_price(ads)
+    if median <= 0:
+        return ads
+    tol = median * max_dev_pct / Decimal("100")
+    lo, hi = median - tol, median + tol
+    kept = [a for a in ads if lo <= a.price <= hi]
+    return kept or ads
+
+
+def _eligible(
+    ads: Iterable[Ad],
+    method: str,
+    max_usdt: Decimal,
+    max_dev_pct: Decimal = Decimal("0"),
+) -> list[Ad]:
+    """Filtra anuncios por método de pago, por que acepten el monto y por outliers.
 
     Cada anuncio se evalúa contra sus propios límites usando su propio precio
-    como referencia (es el monto fiat que realmente se transaría con él).
+    como referencia (es el monto fiat que realmente se transaría con él). Tras
+    ese filtro se descartan los precios atípicos respecto a la mediana del libro.
     """
     out: list[Ad] = []
     for ad in ads:
@@ -44,20 +82,30 @@ def _eligible(ads: Iterable[Ad], method: str, max_usdt: Decimal) -> list[Ad]:
             continue
         if accepts_amount(ad, max_usdt, ad.price):
             out.append(ad)
-    return out
+    return drop_outliers(out, max_dev_pct)
 
 
-def best_buy(ads: Iterable[Ad], max_usdt: Decimal, method: str = _ALL) -> Ad | None:
+def best_buy(
+    ads: Iterable[Ad],
+    max_usdt: Decimal,
+    method: str = _ALL,
+    max_dev_pct: Decimal = Decimal("0"),
+) -> Ad | None:
     """Mejor anuncio para COMPRAR USDT: el de precio más bajo que acepte el monto."""
-    eligible = _eligible(ads, method, max_usdt)
+    eligible = _eligible(ads, method, max_usdt, max_dev_pct)
     if not eligible:
         return None
     return min(eligible, key=lambda a: a.price)
 
 
-def best_sell(ads: Iterable[Ad], max_usdt: Decimal, method: str = _ALL) -> Ad | None:
+def best_sell(
+    ads: Iterable[Ad],
+    max_usdt: Decimal,
+    method: str = _ALL,
+    max_dev_pct: Decimal = Decimal("0"),
+) -> Ad | None:
     """Mejor anuncio para VENDER USDT: el de precio más alto que acepte el monto."""
-    eligible = _eligible(ads, method, max_usdt)
+    eligible = _eligible(ads, method, max_usdt, max_dev_pct)
     if not eligible:
         return None
     return max(eligible, key=lambda a: a.price)
@@ -86,13 +134,14 @@ def best_spread(
     buy_ads = list(buy_ads)
     sell_ads = list(sell_ads)
     methods = _methods_for(target)
+    dev = target.outlier_max_dev_pct
     best: Decimal | None = None
     for bm in methods:
-        bb = best_buy(buy_ads, target.max_usdt, bm)
+        bb = best_buy(buy_ads, target.max_usdt, bm, dev)
         if bb is None:
             continue
         for sm in methods:
-            ss = best_sell(sell_ads, target.max_usdt, sm)
+            ss = best_sell(sell_ads, target.max_usdt, sm, dev)
             if ss is None:
                 continue
             net = compute_spread(bb.price, ss.price) - target.fee_buffer_pct
@@ -116,6 +165,7 @@ def find_best_opportunity(
     buy_ads = list(buy_ads)
     sell_ads = list(sell_ads)
     methods = _methods_for(target)
+    dev = target.outlier_max_dev_pct
 
     best_buy_ad: Ad | None = None
     best_sell_ad: Ad | None = None
@@ -124,11 +174,11 @@ def find_best_opportunity(
     best_net: Decimal | None = None
 
     for bm in methods:
-        bb = best_buy(buy_ads, target.max_usdt, bm)
+        bb = best_buy(buy_ads, target.max_usdt, bm, dev)
         if bb is None:
             continue
         for sm in methods:
-            ss = best_sell(sell_ads, target.max_usdt, sm)
+            ss = best_sell(sell_ads, target.max_usdt, sm, dev)
             if ss is None:
                 continue
             net = compute_spread(bb.price, ss.price) - target.fee_buffer_pct

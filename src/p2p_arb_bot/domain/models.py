@@ -61,6 +61,9 @@ class WatchTarget:
     fee_buffer_pct: Decimal = Decimal("0")
     merchant_check: bool = False
     rows: int = 20                 # filas a pedir por lado/método
+    # Desviación máxima (%) respecto a la mediana del libro para considerar válido
+    # un anuncio. Descarta precios "cebo" atípicos. 0 (default) desactiva el filtro.
+    outlier_max_dev_pct: Decimal = Decimal("0")
 
     @property
     def label(self) -> str:

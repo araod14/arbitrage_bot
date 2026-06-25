@@ -14,6 +14,7 @@ from p2p_arb_bot.domain.arbitrage import (
     best_sell,
     best_spread,
     compute_spread,
+    drop_outliers,
     find_best_opportunity,
 )
 from p2p_arb_bot.domain.models import Ad, WatchTarget
@@ -212,3 +213,68 @@ def test_best_spread_without_threshold():
 
 def test_best_spread_none_when_no_eligible():
     assert best_spread([], [], target()) is None
+
+
+# --- filtro de outliers ------------------------------------------------------
+
+def test_drop_outliers_removes_bait_price():
+    ads = [
+        make_ad(adv_no="a", price="785", trade_type="SELL"),
+        make_ad(adv_no="b", price="790", trade_type="SELL"),
+        make_ad(adv_no="c", price="788", trade_type="SELL"),
+        make_ad(adv_no="bait", price="1780", trade_type="SELL"),  # ~2.25x mediana
+    ]
+    kept = {a.adv_no for a in drop_outliers(ads, D("15"))}
+    assert "bait" not in kept
+    assert kept == {"a", "b", "c"}
+
+
+def test_drop_outliers_disabled_when_zero():
+    ads = [
+        make_ad(adv_no="a", price="785", trade_type="SELL"),
+        make_ad(adv_no="b", price="790", trade_type="SELL"),
+        make_ad(adv_no="bait", price="1780", trade_type="SELL"),
+    ]
+    assert len(drop_outliers(ads, D("0"))) == 3
+
+
+def test_drop_outliers_skips_with_few_ads():
+    # Con menos de 3 anuncios no se puede distinguir el outlier de forma fiable.
+    ads = [
+        make_ad(adv_no="a", price="785", trade_type="SELL"),
+        make_ad(adv_no="bait", price="1780", trade_type="SELL"),
+    ]
+    assert len(drop_outliers(ads, D("15"))) == 2
+
+
+def test_outlier_filter_blocks_fake_opportunity():
+    # El anuncio cebo de venta a 1780 generaría un spread del 127% sin el filtro.
+    buy_ads = [
+        make_ad(adv_no="b1", price="780", trade_type="BUY"),
+        make_ad(adv_no="b2", price="782", trade_type="BUY"),
+        make_ad(adv_no="b3", price="784", trade_type="BUY"),
+    ]
+    sell_ads = [
+        make_ad(adv_no="s1", price="786", trade_type="SELL"),
+        make_ad(adv_no="s2", price="788", trade_type="SELL"),
+        make_ad(adv_no="bait", price="1780", trade_type="SELL"),
+    ]
+    t = target(threshold_pct=D("1.0"), outlier_max_dev_pct=D("15"))
+    opp = find_best_opportunity(buy_ads, sell_ads, t, NOW)
+    # La mejor venta real (788) vs mejor compra (780) = 1.025% > umbral 1%.
+    assert opp is not None
+    assert opp.sell_price == D("788")
+    assert opp.sell_adv_no != "bait"
+
+
+def test_without_filter_bait_produces_fake_spread():
+    # Mismo libro, filtro desactivado: el cebo gana y produce el spread falso.
+    buy_ads = [make_ad(adv_no="b1", price="780", trade_type="BUY")]
+    sell_ads = [
+        make_ad(adv_no="s1", price="788", trade_type="SELL"),
+        make_ad(adv_no="bait", price="1780", trade_type="SELL"),
+    ]
+    t = target(threshold_pct=D("1.0"), outlier_max_dev_pct=D("0"))
+    opp = find_best_opportunity(buy_ads, sell_ads, t, NOW)
+    assert opp is not None
+    assert opp.sell_adv_no == "bait"

@@ -48,6 +48,7 @@ class Defaults:
     max_usdt: Decimal = Decimal("100")
     threshold_pct: Decimal = Decimal("1.0")
     fee_buffer_pct: Decimal = Decimal("0.0")
+    outlier_max_dev_pct: Decimal = Decimal("15")
     merchant_check: bool = False
     poll_interval_s: int = 30
     db_path: str = "opportunities.db"
@@ -70,6 +71,7 @@ class Defaults:
             max_usdt=_get_decimal("MAX_USDT", "100"),
             threshold_pct=_get_decimal("THRESHOLD_PCT", "1.0"),
             fee_buffer_pct=_get_decimal("FEE_BUFFER_PCT", "0.0"),
+            outlier_max_dev_pct=_get_decimal("OUTLIER_MAX_DEV_PCT", "15"),
             merchant_check=_get_bool("MERCHANT_CHECK", False),
             poll_interval_s=_get_int("POLL_INTERVAL_S", 30),
             db_path=os.getenv("DB_PATH", "opportunities.db") or "opportunities.db",

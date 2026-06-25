@@ -116,6 +116,7 @@ async def build_config(source: BinanceP2PSource, defaults: Defaults) -> AppConfi
             fee_buffer_pct=defaults.fee_buffer_pct,
             merchant_check=defaults.merchant_check,
             rows=defaults.rows,
+            outlier_max_dev_pct=defaults.outlier_max_dev_pct,
         )
     else:
         console.print(
@@ -143,6 +144,7 @@ async def build_config(source: BinanceP2PSource, defaults: Defaults) -> AppConfi
             fee_buffer_pct=fee_buffer,
             merchant_check=merchant,
             rows=defaults.rows,
+            outlier_max_dev_pct=defaults.outlier_max_dev_pct,
         )
 
     config = AppConfig(
