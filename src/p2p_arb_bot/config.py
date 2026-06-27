@@ -53,6 +53,7 @@ class Defaults:
     poll_interval_s: int = 30
     db_path: str = "opportunities.db"
     log_path: str = "p2p_arb_bot.log"
+    status_path: str = "status.json"
     impersonate: str = "chrome"
     proxy: str | None = None
     beep: bool = True
@@ -76,6 +77,7 @@ class Defaults:
             poll_interval_s=_get_int("POLL_INTERVAL_S", 30),
             db_path=os.getenv("DB_PATH", "opportunities.db") or "opportunities.db",
             log_path=os.getenv("LOG_PATH", "p2p_arb_bot.log") or "p2p_arb_bot.log",
+            status_path=os.getenv("STATUS_PATH", "status.json") or "status.json",
             impersonate=os.getenv("IMPERSONATE", "chrome") or "chrome",
             proxy=os.getenv("PROXY") or None,
             beep=_get_bool("BEEP", True),
@@ -92,6 +94,7 @@ class AppConfig:
     poll_interval_s: int
     db_path: str
     log_path: str
+    status_path: str
     impersonate: str
     proxy: str | None
     beep: bool

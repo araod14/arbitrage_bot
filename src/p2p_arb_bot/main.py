@@ -20,6 +20,7 @@ from .infrastructure.binance_p2p import BinanceP2PSource
 from .infrastructure.console_notifier import ConsoleNotifier
 from .infrastructure.discovery import discover_pay_methods
 from .infrastructure.sqlite_repo import SQLiteRepository
+from .infrastructure.status_notifier import StatusNotifier
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -152,6 +153,7 @@ async def build_config(source: BinanceP2PSource, defaults: Defaults) -> AppConfi
         poll_interval_s=defaults.poll_interval_s,
         db_path=defaults.db_path,
         log_path=defaults.log_path,
+        status_path=defaults.status_path,
         impersonate=defaults.impersonate,
         proxy=defaults.proxy,
         beep=defaults.beep,
@@ -168,11 +170,12 @@ async def amain(defaults: Defaults) -> None:
         config = await build_config(source, defaults)
         repo = SQLiteRepository(config.db_path)
         notifier = ConsoleNotifier(beep=config.beep, console=console)
+        status = StatusNotifier(config.status_path)
 
         service = MonitorService(
             source=source,
             repositories=[repo],
-            notifiers=[notifier],
+            notifiers=[notifier, status],
             poll_interval_s=config.poll_interval_s,
         )
 
