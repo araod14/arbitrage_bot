@@ -25,6 +25,8 @@ dist/
 *.sqlite
 *.sqlite3
 *.log
+status.json
+*.pid
 
 # Editores / SO
 .idea/

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+
+<section id="status-panel"
+         hx-get="/partials/status"
+         hx-trigger="every 5s, refresh"
+         hx-swap="innerHTML">
+  {% include "partials/status.html" %}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Oportunidades recientes</h2>
+    <span class="muted small">se actualiza cada 8 s</span>
+  </div>
+  <div id="opportunities"
+       hx-get="/partials/opportunities"
+       hx-trigger="every 8s"
+       hx-swap="innerHTML">
+    {% include "partials/opportunities.html" %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Log del bot</h2>
+    <span class="muted small">últimas líneas · cada 5 s</span>
+  </div>
+  <div id="log"
+       hx-get="/partials/log"
+       hx-trigger="every 5s"
+       hx-swap="innerHTML">
+    {% include "partials/log.html" %}
+  </div>
+</section>
+
+{% endblock %}

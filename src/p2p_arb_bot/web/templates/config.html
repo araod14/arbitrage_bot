@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Configurar · P2P Arb{% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h2>Configuración del bot</h2>
+  <p class="muted small">
+    Par actual: <strong>{{ cfg.asset }}/{{ cfg.fiat }}</strong>.
+    Al guardar, si el bot está corriendo se reinicia para aplicar los cambios.
+  </p>
+  {% if message %}<p class="alert ok">{{ message }}</p>{% endif %}
+  {% if error %}<p class="alert error">{{ error }}</p>{% endif %}
+
+  <form action="/config" method="post" class="form">
+    <label>Umbral de ganancia neta (%)
+      <input type="text" name="threshold_pct" value="{{ cfg.threshold_pct }}" required>
+    </label>
+
+    <label>Monto máximo (USDT)
+      <input type="text" name="max_usdt" value="{{ cfg.max_usdt }}" required>
+    </label>
+
+    <label>Intervalo de polling (s)
+      <input type="number" name="poll_interval_s" min="1" value="{{ cfg.poll_interval_s }}" required>
+    </label>
+
+    <fieldset>
+      <legend>Métodos de pago <span class="muted small">(ninguno = todos)</span></legend>
+      {% if methods %}
+        <div class="methods">
+          {% for ident, name in methods %}
+          <label class="check">
+            <input type="checkbox" name="pay_methods" value="{{ ident }}"
+                   {{ 'checked' if ident in selected }}>
+            {{ name }}
+          </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted small">No se pudieron descubrir métodos (sin red o bloqueo). Se mantienen los actuales:
+          {{ cfg.pay_methods|join(', ') if cfg.pay_methods else 'todos' }}.</p>
+        {% for m in cfg.pay_methods %}
+          <input type="hidden" name="pay_methods" value="{{ m }}">
+        {% endfor %}
+      {% endif %}
+    </fieldset>
+
+    <button class="btn primary" type="submit">Guardar y aplicar</button>
+  </form>
+  <p class="muted small"><a href="/">← Volver al dashboard</a></p>
+</div>
+{% endblock %}

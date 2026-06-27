@@ -12,6 +12,11 @@ dependencies = [
     "curl_cffi>=0.7",
     "rich>=13.7",
     "python-dotenv>=1.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "itsdangerous>=2.1",
 ]
 
 [project.optional-dependencies]
@@ -19,9 +24,13 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 p2p-arb-bot = "p2p_arb_bot.main:cli"
+p2p-arb-dashboard = "p2p_arb_bot.web.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"p2p_arb_bot.web" = ["templates/*.html", "templates/partials/*.html", "static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

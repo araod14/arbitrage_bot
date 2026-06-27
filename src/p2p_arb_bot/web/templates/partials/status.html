@@ -1,0 +1,35 @@
+<div class="status-grid">
+  <div class="card kpi">
+    <span class="kpi-label">Estado del bot</span>
+    {% include "partials/bot_controls.html" %}
+  </div>
+
+  <div class="card kpi">
+    <span class="kpi-label">Mejor spread neto actual</span>
+    {% if status and status.best_net_pct is not none %}
+      <span class="kpi-value {{ 'pos' if status.best_net_pct >= 0 else 'neg' }}">
+        {{ '%.3f'|format(status.best_net_pct) }}%
+      </span>
+      <span class="muted small">{{ status.target }} · {{ status.last_update[:19] if status.last_update }}</span>
+    {% else %}
+      <span class="kpi-value muted">—</span>
+      <span class="muted small">sin datos todavía</span>
+    {% endif %}
+  </div>
+
+  <div class="card kpi">
+    <span class="kpi-label">Oportunidades (24 h)</span>
+    <span class="kpi-value">{{ stats.count_24h }}</span>
+    <span class="muted small">
+      {% if stats.best_net_pct is not none %}mejor {{ '%.3f'|format(stats.best_net_pct) }}%{% else %}—{% endif %}
+    </span>
+  </div>
+
+  <div class="card kpi">
+    <span class="kpi-label">Profit estimado (24 h)</span>
+    <span class="kpi-value pos">~{{ '%.2f'|format(stats.total_profit_usdt) }} USDT</span>
+    <span class="muted small">
+      {% if stats.last_detection %}última: {{ stats.last_detection[:19] }}{% else %}—{% endif %}
+    </span>
+  </div>
+</div>
