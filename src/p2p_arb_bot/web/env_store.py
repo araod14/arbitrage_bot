@@ -1,0 +1,114 @@
+"""Lectura/escritura de los parámetros clave del bot en el fichero ``.env``.
+
+La escritura preserva el resto de líneas y comentarios del ``.env``: solo
+reemplaza (o añade) las claves gestionadas por el dashboard. Los valores actuales
+se leen reutilizando ``Defaults.from_env`` para no duplicar el parseo/casting.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from decimal import Decimal
+
+from ..config import Defaults
+from ..infrastructure.binance_p2p import BinanceP2PSource
+from ..infrastructure.discovery import discover_pay_methods
+
+logger = logging.getLogger(__name__)
+
+#: Claves que el dashboard permite editar (parámetros clave).
+MANAGED_KEYS = ("THRESHOLD_PCT", "MAX_USDT", "PAY_METHODS", "POLL_INTERVAL_S")
+
+
+def read_config() -> dict:
+    """Valores actuales de los parámetros clave (desde entorno/``.env``)."""
+    d = Defaults.from_env()
+    return {
+        "threshold_pct": str(d.threshold_pct),
+        "max_usdt": str(d.max_usdt),
+        "pay_methods": list(d.pay_methods),
+        "poll_interval_s": d.poll_interval_s,
+        "asset": d.asset,
+        "fiat": d.fiat,
+    }
+
+
+def write_config(
+    env_path: str,
+    *,
+    threshold_pct: str,
+    max_usdt: str,
+    pay_methods: list[str],
+    poll_interval_s: int,
+) -> None:
+    """Actualiza solo las claves gestionadas en ``.env``, preservando el resto.
+
+    Valida los numéricos antes de escribir (lanza ``ValueError`` si no parsean).
+    """
+    threshold = Decimal(threshold_pct)  # valida
+    amount = Decimal(max_usdt)          # valida
+    if amount <= 0:
+        raise ValueError("El monto máximo debe ser > 0.")
+    if int(poll_interval_s) <= 0:
+        raise ValueError("El intervalo de polling debe ser > 0.")
+
+    new_values = {
+        "THRESHOLD_PCT": str(threshold),
+        "MAX_USDT": str(amount),
+        "PAY_METHODS": ",".join(m.strip() for m in pay_methods if m.strip()),
+        "POLL_INTERVAL_S": str(int(poll_interval_s)),
+    }
+
+    lines: list[str] = []
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in new_values:
+                out.append(f"{key}={new_values[key]}")
+                seen.add(key)
+                continue
+        out.append(line)
+
+    for key, value in new_values.items():
+        if key not in seen:
+            out.append(f"{key}={value}")
+
+    tmp = f"{env_path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(out) + "\n")
+    os.replace(tmp, env_path)
+
+    # Actualiza el entorno del propio dashboard para que el subproceso del bot
+    # (que hereda os.environ) tome los nuevos valores al reiniciar. Necesario en
+    # Docker, donde las vars ya están en el entorno y load_dotenv no las pisa.
+    os.environ.update(new_values)
+    logger.info("Configuración guardada en %s", env_path)
+
+
+async def discover_methods(
+    asset: str, fiat: str, *, timeout_s: float = 10.0
+) -> list[tuple[str, str]]:
+    """Métodos de pago disponibles para poblar el formulario de config.
+
+    Acota el descubrimiento con un timeout para que la página no se quede colgada
+    si Binance está lento o inalcanzable (el caller cae a lista vacía).
+    """
+    source = BinanceP2PSource(
+        impersonate=os.getenv("IMPERSONATE", "chrome") or "chrome",
+        proxy=os.getenv("PROXY") or None,
+    )
+    try:
+        return await asyncio.wait_for(
+            discover_pay_methods(source, asset, fiat), timeout=timeout_s
+        )
+    finally:
+        await source.aclose()

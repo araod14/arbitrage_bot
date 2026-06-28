@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}P2P Arb Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">⚡ P2P Arb <span class="muted">Dashboard</span></a>
+    <nav>
+      {% if authed %}
+        <a href="/config" class="navlink">Configurar</a>
+        <form action="/logout" method="post" class="inline">
+          <button class="navlink ghost" type="submit">Salir</button>
+        </form>
+      {% else %}
+        <a href="/login" class="navlink">Login</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer muted">Solo monitoreo · los datos se refrescan automáticamente</footer>
+</body>
+</html>

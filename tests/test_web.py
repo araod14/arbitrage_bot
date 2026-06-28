@@ -1,0 +1,198 @@
+"""Tests del dashboard: escritura de .env, status notifier y lectura de DB.
+
+Sin red ni servidor: se ejercitan las funciones puras de soporte usando ficheros
+temporales (tmp_path) y una DB SQLite construida a mano con el esquema del bot.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sqlite3
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+
+from p2p_arb_bot.domain.models import Opportunity
+from p2p_arb_bot.infrastructure.sqlite_repo import SQLiteRepository
+from p2p_arb_bot.infrastructure.status_notifier import StatusNotifier
+from p2p_arb_bot.web import db_reader, env_store
+
+
+# --- env_store.write_config -------------------------------------------------
+
+def test_write_config_preserves_other_keys(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text(
+        "# comentario\n"
+        "ASSET=USDT\n"
+        "THRESHOLD_PCT=1.0\n"
+        "FIAT=VES\n"
+        "MAX_USDT=100\n",
+        encoding="utf-8",
+    )
+
+    env_store.write_config(
+        str(env),
+        threshold_pct="2.5",
+        max_usdt="250",
+        pay_methods=["PagoMovil", "Banesco"],
+        poll_interval_s=45,
+    )
+
+    content = env.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    assert "# comentario" in lines
+    assert "ASSET=USDT" in lines
+    assert "FIAT=VES" in lines
+    assert "THRESHOLD_PCT=2.5" in lines
+    assert "MAX_USDT=250" in lines
+    assert "PAY_METHODS=PagoMovil,Banesco" in lines
+    assert "POLL_INTERVAL_S=45" in lines
+    # No duplica claves existentes.
+    assert sum(1 for ln in lines if ln.startswith("THRESHOLD_PCT=")) == 1
+
+
+def test_write_config_appends_missing_keys(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("ASSET=USDT\n", encoding="utf-8")
+    env_store.write_config(
+        str(env),
+        threshold_pct="1.0",
+        max_usdt="100",
+        pay_methods=[],
+        poll_interval_s=30,
+    )
+    lines = env.read_text(encoding="utf-8").splitlines()
+    assert "PAY_METHODS=" in lines  # vacío = todos
+    assert "POLL_INTERVAL_S=30" in lines
+
+
+def test_write_config_rejects_bad_values(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("", encoding="utf-8")
+    try:
+        env_store.write_config(
+            str(env),
+            threshold_pct="1.0",
+            max_usdt="0",  # inválido
+            pay_methods=[],
+            poll_interval_s=30,
+        )
+        assert False, "debería lanzar ValueError"
+    except ValueError:
+        pass
+
+
+def test_write_config_updates_os_environ(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("", encoding="utf-8")
+    monkeypatch.delenv("THRESHOLD_PCT", raising=False)
+    env_store.write_config(
+        str(env),
+        threshold_pct="3.3",
+        max_usdt="500",
+        pay_methods=["Mercantil"],
+        poll_interval_s=20,
+    )
+    assert os.environ["THRESHOLD_PCT"] == "3.3"
+    assert os.environ["PAY_METHODS"] == "Mercantil"
+
+
+# --- StatusNotifier ---------------------------------------------------------
+
+def test_status_notifier_writes_valid_json(tmp_path):
+    path = tmp_path / "status.json"
+    notifier = StatusNotifier(str(path))
+
+    from p2p_arb_bot.domain.models import WatchTarget
+
+    target = WatchTarget(
+        asset="USDT", fiat="VES", pay_methods=(),
+        max_usdt=Decimal("100"), threshold_pct=Decimal("1"),
+    )
+    asyncio.run(notifier.notify_heartbeat(target, Decimal("2.5")))
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["target"] == "USDT/VES"
+    assert data["best_net_pct"] == 2.5
+    assert "last_update" in data
+
+
+def test_status_notifier_records_last_opportunity(tmp_path):
+    path = tmp_path / "status.json"
+    notifier = StatusNotifier(str(path))
+    opp = Opportunity(
+        detected_at=datetime.now(timezone.utc),
+        fiat="VES", asset="USDT",
+        buy_pay_method="A", sell_pay_method="B",
+        buy_price=Decimal("36"), sell_price=Decimal("37"),
+        spread_pct=Decimal("2.77"), net_pct=Decimal("2.5"),
+        max_usdt=Decimal("100"),
+        buy_adv_no="1", sell_adv_no="2",
+        buy_advertiser="x", sell_advertiser="y",
+        buy_url="http://b", sell_url="http://s",
+        est_profit_usdt=Decimal("2.5"),
+    )
+    asyncio.run(notifier.notify_opportunity(opp))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["best_net_pct"] == 2.5
+    assert data["last_opportunity"]["sell_price"] == "37"
+
+
+# --- db_reader --------------------------------------------------------------
+
+def _seed_db(path: str, *, net_pcts: list[float]) -> None:
+    repo = SQLiteRepository(path)
+    now = datetime.now(timezone.utc)
+    for i, net in enumerate(net_pcts):
+        repo.save(
+            Opportunity(
+                detected_at=now - timedelta(minutes=i),
+                fiat="VES", asset="USDT",
+                buy_pay_method="A", sell_pay_method="B",
+                buy_price=Decimal("36"), sell_price=Decimal("37"),
+                spread_pct=Decimal(str(net + 0.2)), net_pct=Decimal(str(net)),
+                max_usdt=Decimal("100"),
+                buy_adv_no=f"b{i}", sell_adv_no=f"s{i}",
+                buy_advertiser="x", sell_advertiser="y",
+                buy_url="http://b", sell_url="http://s",
+                est_profit_usdt=Decimal("1.5"),
+            )
+        )
+    repo.close()
+
+
+def test_stats_24h(tmp_path):
+    db = tmp_path / "opps.db"
+    _seed_db(str(db), net_pcts=[1.0, 2.0, 3.0])
+    stats = db_reader.stats_24h(str(db))
+    assert stats["count_24h"] == 3
+    assert stats["best_net_pct"] == 3.0
+    assert stats["total_profit_usdt"] == 4.5
+    assert stats["last_detection"] is not None
+
+
+def test_stats_24h_missing_db(tmp_path):
+    stats = db_reader.stats_24h(str(tmp_path / "nope.db"))
+    assert stats["count_24h"] == 0
+    assert stats["best_net_pct"] is None
+
+
+def test_recent_opportunities(tmp_path):
+    db = tmp_path / "opps.db"
+    _seed_db(str(db), net_pcts=[1.0, 2.0])
+    rows = db_reader.recent_opportunities(str(db), limit=10)
+    assert len(rows) == 2
+    assert rows[0]["asset"] == "USDT"
+
+
+def test_read_status_missing(tmp_path):
+    assert db_reader.read_status(str(tmp_path / "nope.json")) is None
+
+
+def test_tail_log(tmp_path):
+    log = tmp_path / "bot.log"
+    log.write_text("\n".join(f"line {i}" for i in range(10)) + "\n", encoding="utf-8")
+    tail = db_reader.tail_log(str(log), lines=3)
+    assert tail == ["line 7", "line 8", "line 9"]

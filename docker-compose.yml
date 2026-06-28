@@ -1,25 +1,33 @@
 services:
-  bot:
+  dashboard:
     build: .
     image: p2p-arb-bot
-    container_name: p2p-arb-bot
+    container_name: p2p-arb-dashboard
     # Toma los valores de .env (crea uno con `make env` o `cp .env.example .env`).
     env_file:
       - path: .env
         required: false
     environment:
-      # En contenedor el bot corre sin prompts; la config viene del entorno.
+      # El bot (subproceso lanzado por el dashboard) corre sin prompts.
       NO_INPUT: "true"
-      # La DB y los logs van al volumen persistente (/data), no a la capa
-      # efímera del contenedor (/app). Así sobreviven a recreaciones.
+      # DB, logs y estado van al volumen persistente (/data), no a la capa
+      # efímera del contenedor. Así sobreviven a recreaciones.
       DB_PATH: "/data/opportunities.db"
       LOG_PATH: "/data/p2p_arb_bot.log"
+      STATUS_PATH: "/data/status.json"
+      BOT_PIDFILE: "/data/bot.pid"
+      # El dashboard edita este .env al guardar config; el bind-mount de abajo
+      # lo deja en el mismo fichero que lee env_file.
+      ENV_PATH: "/app/.env"
+    ports:
+      - "${DASHBOARD_PORT:-8000}:8000"
     volumes:
-      # Persiste la base de datos SQLite y los logs entre reinicios.
+      # Persiste la base de datos SQLite, los logs y el estado entre reinicios.
       - arb-data:/data
+      # .env editable desde el dashboard (mismo fichero que lee env_file).
+      - ./.env:/app/.env
     restart: unless-stopped
-    # Permiten correr en modo interactivo con `docker compose run --rm bot`
-    # (p. ej. para descubrir métodos de pago manualmente con NO_INPUT=false).
+    # Permiten correr el bot por CLI con `docker compose run --rm dashboard ...`.
     stdin_open: true
     tty: true
 

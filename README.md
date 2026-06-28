@@ -78,19 +78,60 @@ y define el resto de variables.
 
 `Ctrl+C` cierra la conexión HTTP y la base de datos de forma limpia.
 
+## Dashboard web
+
+Un dashboard (FastAPI + HTMX) permite **supervisar, ejecutar y configurar** el bot
+desde el navegador. La **supervisión es pública** (no requiere login); **arrancar /
+parar el bot y editar la configuración exigen contraseña**.
+
+```bash
+make dashboard      # local: http://localhost:8000
+```
+
+Configura antes en `.env`:
+
+- `DASHBOARD_PASSWORD` — contraseña para las acciones protegidas (sin ella, el
+  dashboard queda en modo solo-lectura).
+- `DASHBOARD_SECRET` — secreto para firmar la cookie de sesión
+  (`python -c "import secrets; print(secrets.token_hex(32))"`).
+- `DASHBOARD_HOST` / `DASHBOARD_PORT` — interfaz y puerto (por defecto `0.0.0.0:8000`).
+
+Qué ofrece:
+
+- **Supervisar** (público): estado del bot (corriendo/detenido + uptime), mejor
+  spread neto actual, oportunidades de las últimas 24 h, profit estimado, tabla de
+  oportunidades recientes y las últimas líneas del log. Todo se auto-refresca.
+- **Ejecutar** (login): botones de arrancar / parar / reiniciar. El dashboard
+  gestiona el bot como subproceso.
+- **Configurar** (login): edita los parámetros clave (umbral %, monto máx USDT,
+  métodos de pago, intervalo) y los aplica reiniciando el bot. Escribe en `.env`
+  preservando el resto de claves.
+
+El estado en vivo lo alimenta un `StatusNotifier` que el bot añade a su lista de
+notifiers: vuelca el último heartbeat/oportunidad a `STATUS_PATH` (`status.json`),
+así el dashboard no necesita pegarle a Binance por su cuenta.
+
+En Docker el dashboard es el **contenedor principal** y arranca el bot como
+subproceso (ver más abajo).
+
 ## Despliegue con Docker
 
-Requiere Docker con el plugin Compose. La imagen corre el bot en modo **no
-interactivo** (`NO_INPUT=true`), tomando la configuración de variables de
-entorno / `.env`. La base de datos y los logs se guardan en un volumen
-(`arb-data`, montado en `/data`) que persiste entre reinicios.
+Requiere Docker con el plugin Compose. El contenedor corre el **dashboard web**
+(`http://localhost:8000`), que arranca/para el bot como subproceso en modo **no
+interactivo** (`NO_INPUT=true`). La configuración se toma de variables de entorno /
+`.env`. La base de datos, los logs y el estado se guardan en un volumen
+(`arb-data`, montado en `/data`) que persiste entre reinicios; el `.env` se
+bind-montea para que la edición desde el dashboard persista.
 
 ```bash
 make env            # crea .env desde .env.example (ajústalo a tu gusto)
-make docker-up      # construye y levanta el bot en segundo plano
+make docker-up      # construye y levanta el dashboard en segundo plano
 make docker-logs    # sigue la salida
 make docker-down    # detiene y elimina el contenedor
 ```
+
+Luego abre `http://localhost:8000` y arranca el bot desde el dashboard (necesitas
+`DASHBOARD_PASSWORD` en `.env`).
 
 O directamente con Compose:
 
@@ -106,7 +147,7 @@ En modo no interactivo no hay menú de métodos: define `PAY_METHODS` en `.env`
 interactivo:
 
 ```bash
-make docker-run     # = docker compose run --rm -e NO_INPUT=false bot
+make docker-run     # corre el bot interactivo dentro del contenedor del dashboard
 ```
 
 El contenedor necesita **salida a Internet** hacia `p2p.binance.com`. Si tu red
@@ -117,8 +158,8 @@ en los logs indican precisamente falta de egress.
 ### Makefile
 
 `make` (o `make help`) lista todos los objetivos: `install`, `test`, `run`,
-`clean`, `env`, y los `docker-*` (`docker-build`, `docker-up`, `docker-down`,
-`docker-logs`, `docker-run`, `docker-shell`).
+`dashboard`, `clean`, `env`, y los `docker-*` (`docker-build`, `docker-up`,
+`docker-down`, `docker-logs`, `docker-run`, `docker-shell`).
 
 ### Terminología
 

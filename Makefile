@@ -6,7 +6,7 @@ PY   := $(VENV)/bin/python
 PIP  := $(VENV)/bin/pip
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install test run lint clean env \
+.PHONY: help venv install test run dashboard lint clean env \
         docker-build docker-up docker-down docker-logs docker-run docker-shell
 
 help: ## Muestra esta ayuda
@@ -28,6 +28,9 @@ test: ## Corre la batería de tests
 run: ## Ejecuta el bot localmente (interactivo)
 	$(PY) -m p2p_arb_bot.main
 
+dashboard: env ## Levanta el dashboard web local (http://localhost:8000)
+	$(PY) -m p2p_arb_bot.web
+
 env: ## Crea .env desde .env.example si no existe
 	@test -f .env || (cp .env.example .env && echo ".env creado desde .env.example")
 
@@ -40,7 +43,7 @@ clean: ## Borra cachés y artefactos de build
 docker-build: ## Construye la imagen
 	docker compose build
 
-docker-up: env ## Levanta el bot en segundo plano (NO_INPUT=true)
+docker-up: env ## Levanta el dashboard (y controla el bot) en segundo plano
 	docker compose up -d --build
 
 docker-down: ## Detiene y elimina el contenedor
@@ -49,8 +52,8 @@ docker-down: ## Detiene y elimina el contenedor
 docker-logs: ## Sigue los logs del contenedor
 	docker compose logs -f
 
-docker-run: env ## Corre en primer plano de forma interactiva (descubrir métodos)
-	docker compose run --rm -e NO_INPUT=false bot
+docker-run: env ## Corre el bot en primer plano de forma interactiva (descubrir métodos)
+	docker compose run --rm -e NO_INPUT=false dashboard python -m p2p_arb_bot.main
 
 docker-shell: ## Abre una shell dentro del contenedor
-	docker compose run --rm --entrypoint sh bot
+	docker compose run --rm --entrypoint sh dashboard

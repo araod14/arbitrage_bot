@@ -1,0 +1,24 @@
+<div class="bot-controls">
+  {% if bot.running %}
+    <span class="badge on">● Corriendo</span>
+    <span class="muted small">pid {{ bot.pid }} · {{ bot.uptime_h }}</span>
+  {% else %}
+    <span class="badge off">● Detenido</span>
+  {% endif %}
+
+  {% if authed %}
+    <div class="btn-row">
+      {% if bot.running %}
+        <button class="btn" hx-post="/bot/stop" hx-target="closest .kpi" hx-swap="none"
+                hx-on::after-request="htmx.trigger('#status-panel','refresh')">Parar</button>
+        <button class="btn" hx-post="/bot/restart" hx-target="closest .kpi" hx-swap="none"
+                hx-on::after-request="htmx.trigger('#status-panel','refresh')">Reiniciar</button>
+      {% else %}
+        <button class="btn primary" hx-post="/bot/start" hx-target="closest .kpi" hx-swap="none"
+                hx-on::after-request="htmx.trigger('#status-panel','refresh')">Arrancar</button>
+      {% endif %}
+    </div>
+  {% else %}
+    <a class="muted small" href="/login">login para controlar</a>
+  {% endif %}
+</div>
