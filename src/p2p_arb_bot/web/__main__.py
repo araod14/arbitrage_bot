@@ -8,9 +8,11 @@ from __future__ import annotations
 import os
 
 import uvicorn
+from dotenv import load_dotenv
 
 
 def main() -> None:
+    load_dotenv(os.getenv("ENV_PATH") or None)  # honra DASHBOARD_* del .env
     host = os.getenv("DASHBOARD_HOST", "0.0.0.0")
     port = int(os.getenv("DASHBOARD_PORT", "8000"))
     uvicorn.run("p2p_arb_bot.web.app:app", host=host, port=port, log_level="info")

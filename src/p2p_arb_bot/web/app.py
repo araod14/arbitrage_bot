@@ -11,6 +11,7 @@ import os
 import secrets
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -47,6 +48,11 @@ def _humanize_uptime(seconds: int | None) -> str:
 
 
 def create_app() -> FastAPI:
+    # Carga .env para que DASHBOARD_PASSWORD/SECRET y las rutas estén disponibles
+    # vía os.getenv, igual que hace el bot en Defaults.from_env(). Sin esto, el
+    # login diría que la contraseña no está configurada aunque esté en el .env.
+    load_dotenv(os.getenv("ENV_PATH") or None)
+
     app = FastAPI(title="P2P Arb Dashboard")
 
     secret = os.getenv("DASHBOARD_SECRET") or secrets.token_hex(32)
