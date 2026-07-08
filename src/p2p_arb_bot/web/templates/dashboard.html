@@ -11,7 +11,17 @@
 <section class="card">
   <div class="card-head">
     <h2>Oportunidades recientes</h2>
-    <span class="muted small">se actualiza cada 8 s</span>
+    <div class="card-head-actions">
+      <span class="muted small">se actualiza cada 8 s</span>
+      {% if authed %}
+      <button class="btn"
+              hx-post="/opportunities/clear"
+              hx-target="#opportunities"
+              hx-swap="innerHTML"
+              hx-confirm="¿Borrar todas las oportunidades registradas? Esta acción no se puede deshacer."
+              hx-on::after-request="htmx.trigger('#status-panel','refresh')">Limpiar</button>
+      {% endif %}
+    </div>
   </div>
   <div id="opportunities"
        hx-get="/partials/opportunities"

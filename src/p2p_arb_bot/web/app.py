@@ -185,6 +185,24 @@ def create_app() -> FastAPI:
             {"request": request, "authed": True, "bot": _bot_view()},
         )
 
+    # --- limpiar oportunidades (login) ----------------------------------
+
+    @app.post("/opportunities/clear", response_class=HTMLResponse)
+    def opportunities_clear(
+        request: Request, _: None = Depends(auth.require_login)
+    ) -> HTMLResponse:
+        p = _paths()
+        db_reader.clear_opportunities(p["db_path"])
+        # Devuelve la tabla ya vacía para que HTMX la reemplace en el acto.
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "partials/opportunities.html",
+            {
+                "request": request,
+                "opportunities": db_reader.recent_opportunities(p["db_path"], limit=50),
+            },
+        )
+
     # --- configuración (login) ------------------------------------------
 
     @app.get("/config", response_class=HTMLResponse)

@@ -187,6 +187,20 @@ def test_recent_opportunities(tmp_path):
     assert rows[0]["asset"] == "USDT"
 
 
+def test_clear_opportunities(tmp_path):
+    db = tmp_path / "opps.db"
+    _seed_db(str(db), net_pcts=[1.0, 2.0, 3.0])
+    removed = db_reader.clear_opportunities(str(db))
+    assert removed == 3
+    assert db_reader.recent_opportunities(str(db), limit=10) == []
+    # Idempotente: volver a limpiar no falla y borra 0.
+    assert db_reader.clear_opportunities(str(db)) == 0
+
+
+def test_clear_opportunities_missing_db(tmp_path):
+    assert db_reader.clear_opportunities(str(tmp_path / "nope.db")) == 0
+
+
 def test_read_status_missing(tmp_path):
     assert db_reader.read_status(str(tmp_path / "nope.json")) is None
 
