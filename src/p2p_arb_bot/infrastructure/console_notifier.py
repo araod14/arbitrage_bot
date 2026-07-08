@@ -42,13 +42,11 @@ class ConsoleNotifier:
         table.add_row("Monto", f"{opp.max_usdt} {opp.asset}")
         table.add_row(
             "Comprar a",
-            f"{opp.buy_price} {opp.fiat}  vía [b]{buy_method}[/]  "
-            f"(@{opp.buy_advertiser})",
+            f"{opp.buy_price} {opp.fiat}  vía [b]{buy_method}[/]",
         )
         table.add_row(
             "Vender a",
-            f"{opp.sell_price} {opp.fiat}  vía [b]{sell_method}[/]  "
-            f"(@{opp.sell_advertiser})",
+            f"{opp.sell_price} {opp.fiat}  vía [b]{sell_method}[/]",
         )
         table.add_row(
             "Profit est.",

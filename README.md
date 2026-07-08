@@ -69,7 +69,8 @@ Al arrancar, el bot:
 3. Entra en bucle: consulta ambos lados (BUY/SELL) en paralelo, calcula el
    mejor spread (incluyendo **pares cruzados** entre métodos), y:
    - Si hay oportunidad ≥ umbral: imprime un panel destacado con % neto/bruto,
-     precios, métodos, anunciantes y los **dos enlaces**, y la guarda en SQLite.
+     precios, métodos y los **dos enlaces a las publicaciones** (compra y venta),
+     y la guarda en SQLite.
    - Si no: imprime una línea de estado discreta (heartbeat) con el mejor
      spread actual.
 
@@ -175,7 +176,7 @@ Hay oportunidad cuando `best_sell > best_buy` y `net_pct ≥ umbral`, con
 
 Tabla `opportunities` (SQLite, ruta en `DB_PATH`) con `detected_at`, par,
 métodos de cada pierna, precios, `spread_pct`, `net_pct`, `max_usdt`, los
-`advNo` de cada anuncio, anunciantes, los enlaces y `est_profit_usdt`
+`advNo` de cada anuncio, anunciantes, los enlaces a cada publicación y `est_profit_usdt`
 (ganancia neta estimada en USDT = `max_usdt * net_pct / 100`). Índice por
 `detected_at`. Las BDs creadas con un esquema anterior se migran solas al
 arrancar (se añade la columna nueva si falta).
