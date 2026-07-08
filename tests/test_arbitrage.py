@@ -200,8 +200,8 @@ def test_opportunity_carries_links_and_advertisers():
     buy_ads = [make_ad(adv_no="b1", price="800", trade_type="BUY")]
     sell_ads = [make_ad(adv_no="s1", price="830", trade_type="SELL")]
     opp = find_best_opportunity(buy_ads, sell_ads, target(), NOW)
-    assert "advertiserNo=user-b1" in opp.buy_url
-    assert "advertiserNo=user-s1" in opp.sell_url
+    assert "code=b1" in opp.buy_url
+    assert "code=s1" in opp.sell_url
     assert opp.buy_advertiser == "name-b1"
 
 

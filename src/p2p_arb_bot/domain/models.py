@@ -13,8 +13,8 @@ from typing import Literal
 
 TradeType = Literal["BUY", "SELL"]
 
-#: Plantilla del enlace público al perfil del anunciante en Binance P2P.
-_ADVERTISER_URL = "https://p2p.binance.com/en/advertiserDetail?advertiserNo={no}"
+#: Plantilla del enlace público al anuncio (publicación) concreto en Binance P2P.
+_AD_URL = "https://c2c.binance.com/en/adv?code={no}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,8 +41,8 @@ class Ad:
     trade_type: TradeType
 
     @property
-    def advertiser_url(self) -> str:
-        return _ADVERTISER_URL.format(no=self.advertiser_no)
+    def ad_url(self) -> str:
+        return _AD_URL.format(no=self.adv_no)
 
 
 @dataclass(frozen=True, slots=True)

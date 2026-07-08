@@ -213,8 +213,8 @@ def find_best_opportunity(
         sell_adv_no=best_sell_ad.adv_no,
         buy_advertiser=best_buy_ad.advertiser_name,
         sell_advertiser=best_sell_ad.advertiser_name,
-        buy_url=best_buy_ad.advertiser_url,
-        sell_url=best_sell_ad.advertiser_url,
+        buy_url=best_buy_ad.ad_url,
+        sell_url=best_sell_ad.ad_url,
         est_profit_fiat=est_profit,
         est_profit_usdt=est_profit_usdt,
     )
