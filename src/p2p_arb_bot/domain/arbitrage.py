@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterable
 
-from .models import Ad, Opportunity, WatchTarget
+from .models import Ad, Opportunity, WatchTarget, book_url
 
 # Etiqueta interna para el caso "sin filtrar por método" (target sin métodos).
 _ALL = "ALL"
@@ -30,6 +30,16 @@ def accepts_amount(ad: Ad, max_usdt: Decimal, ref_price: Decimal) -> bool:
     """
     amount = amount_in_fiat(max_usdt, ref_price)
     return ad.min_amount <= amount <= ad.max_amount
+
+
+def has_inventory(ad: Ad, max_usdt: Decimal) -> bool:
+    """¿El anuncio tiene USDT disponible suficiente para operar ``max_usdt``?
+
+    Comprueba ``surplusAmount`` (inventario real del anuncio, en USDT). Muchos
+    anuncios "cebo" muestran un precio muy bueno con poquísima disponibilidad: sin
+    este filtro serían elegidos como mejor compra/venta aunque no puedas llenarlos.
+    """
+    return ad.surplus >= max_usdt
 
 
 def _median_price(ads: list[Ad]) -> Decimal:
@@ -70,17 +80,18 @@ def _eligible(
     max_usdt: Decimal,
     max_dev_pct: Decimal = Decimal("0"),
 ) -> list[Ad]:
-    """Filtra anuncios por método de pago, por que acepten el monto y por outliers.
+    """Filtra por método de pago, por que acepten el monto, por inventario y outliers.
 
     Cada anuncio se evalúa contra sus propios límites usando su propio precio
-    como referencia (es el monto fiat que realmente se transaría con él). Tras
-    ese filtro se descartan los precios atípicos respecto a la mediana del libro.
+    como referencia (es el monto fiat que realmente se transaría con él) y contra
+    su disponibilidad real (``surplusAmount``). Tras ese filtro se descartan los
+    precios atípicos respecto a la mediana del libro.
     """
     out: list[Ad] = []
     for ad in ads:
         if method != _ALL and method not in ad.pay_methods:
             continue
-        if accepts_amount(ad, max_usdt, ad.price):
+        if accepts_amount(ad, max_usdt, ad.price) and has_inventory(ad, max_usdt):
             out.append(ad)
     return drop_outliers(out, max_dev_pct)
 
@@ -213,8 +224,19 @@ def find_best_opportunity(
         sell_adv_no=best_sell_ad.adv_no,
         buy_advertiser=best_buy_ad.advertiser_name,
         sell_advertiser=best_sell_ad.advertiser_name,
-        buy_url=best_buy_ad.ad_url,
-        sell_url=best_sell_ad.ad_url,
+        # Enlace al libro en vivo de cada lado/método (el centinela _ALL => todos).
+        buy_url=book_url(
+            trade_type="BUY",
+            asset=target.asset,
+            fiat=target.fiat,
+            pay_method="" if best_buy_method == _ALL else best_buy_method,
+        ),
+        sell_url=book_url(
+            trade_type="SELL",
+            asset=target.asset,
+            fiat=target.fiat,
+            pay_method="" if best_sell_method == _ALL else best_sell_method,
+        ),
         est_profit_fiat=est_profit,
         est_profit_usdt=est_profit_usdt,
     )

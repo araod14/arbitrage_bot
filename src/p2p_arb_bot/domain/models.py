@@ -13,8 +13,29 @@ from typing import Literal
 
 TradeType = Literal["BUY", "SELL"]
 
-#: Plantilla del enlace público al anuncio (publicación) concreto en Binance P2P.
-_AD_URL = "https://c2c.binance.com/en/adv?code={no}"
+#: Plantilla del enlace al LIBRO P2P en vivo, filtrado por lado, par, fiat y
+#: método de pago. No se enlaza a un anuncio concreto: el ``advNo`` que devuelve
+#: el endpoint público viene redondeado (float64, pierde los dígitos bajos) y no
+#: sirve para un deep-link por publicación; además los anuncios P2P son efímeros
+#: y "expiran" en segundos. El libro filtrado siempre muestra los anuncios
+#: vivos de ese lado/método, que es lo útil para actuar.
+_BOOK_URL = "https://p2p.binance.com/es/trade/{side}/{asset}?fiat={fiat}&payment={payment}"
+
+#: Valor del parámetro ``payment`` cuando no se filtra por método concreto.
+_ALL_PAYMENTS = "all-payments"
+
+
+def book_url(
+    *, trade_type: TradeType, asset: str, fiat: str, pay_method: str = ""
+) -> str:
+    """Enlace al libro P2P en vivo para ese lado/par/fiat/método.
+
+    ``trade_type`` es la perspectiva del usuario: ``"BUY"`` abre la pestaña
+    Comprar; ``"SELL"``, la de Vender. ``pay_method`` vacío => todos los métodos.
+    """
+    side = "buy" if trade_type == "BUY" else "sell"
+    payment = pay_method or _ALL_PAYMENTS
+    return _BOOK_URL.format(side=side, asset=asset, fiat=fiat, payment=payment)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,10 +60,6 @@ class Ad:
     advertiser_no: str            # userNo
     advertiser_name: str          # nickName
     trade_type: TradeType
-
-    @property
-    def ad_url(self) -> str:
-        return _AD_URL.format(no=self.adv_no)
 
 
 @dataclass(frozen=True, slots=True)

@@ -16,6 +16,7 @@ from p2p_arb_bot.domain.arbitrage import (
     compute_spread,
     drop_outliers,
     find_best_opportunity,
+    has_inventory,
 )
 from p2p_arb_bot.domain.models import Ad, WatchTarget
 
@@ -31,11 +32,12 @@ def make_ad(
     methods: tuple[str, ...] = ("PagoMovil",),
     min_amount: str = "0",
     max_amount: str = "1000000",
+    surplus: str = "10000",
 ) -> Ad:
     return Ad(
         adv_no=adv_no,
         price=D(price),
-        surplus=D("10000"),
+        surplus=D(surplus),
         min_amount=D(min_amount),
         max_amount=D(max_amount),
         pay_methods=methods,
@@ -125,6 +127,34 @@ def test_accepts_amount_boundaries_inclusive():
     assert accepts_amount(ad, D("100"), D("800")) is True
 
 
+def test_has_inventory_requires_surplus_ge_max_usdt():
+    ad = make_ad(adv_no="a", price="800", trade_type="BUY", surplus="1000")
+    assert has_inventory(ad, D("1000")) is True   # justo el límite (inclusive)
+    assert has_inventory(ad, D("1001")) is False  # no alcanza el inventario
+
+
+def test_best_buy_skips_ads_without_inventory():
+    # Precio buenísimo (más bajo) pero sin inventario para el monto -> se descarta;
+    # gana el siguiente con inventario suficiente. Simula un anuncio "cebo".
+    ads = [
+        make_ad(adv_no="cebo", price="790", trade_type="BUY", surplus="30"),
+        make_ad(adv_no="real", price="800", trade_type="BUY", surplus="5000"),
+    ]
+    best = best_buy(ads, D("1000"))
+    assert best is not None
+    assert best.adv_no == "real"
+
+
+def test_best_sell_skips_ads_without_inventory():
+    ads = [
+        make_ad(adv_no="cebo", price="830", trade_type="SELL", surplus="30"),
+        make_ad(adv_no="real", price="820", trade_type="SELL", surplus="5000"),
+    ]
+    best = best_sell(ads, D("1000"))
+    assert best is not None
+    assert best.adv_no == "real"
+
+
 def test_best_buy_skips_ads_outside_limits():
     ads = [
         # Precio más bajo pero su max no admite el monto -> se descarta.
@@ -200,9 +230,20 @@ def test_opportunity_carries_links_and_advertisers():
     buy_ads = [make_ad(adv_no="b1", price="800", trade_type="BUY")]
     sell_ads = [make_ad(adv_no="s1", price="830", trade_type="SELL")]
     opp = find_best_opportunity(buy_ads, sell_ads, target(), NOW)
-    assert "code=b1" in opp.buy_url
-    assert "code=s1" in opp.sell_url
+    # Sin filtro de método => libro en vivo de cada lado con payment=all-payments.
+    assert "/trade/buy/USDT?fiat=VES" in opp.buy_url
+    assert "/trade/sell/USDT?fiat=VES" in opp.sell_url
+    assert "payment=all-payments" in opp.buy_url
     assert opp.buy_advertiser == "name-b1"
+
+
+def test_opportunity_links_carry_pay_method():
+    buy_ads = [make_ad(adv_no="bA", price="800", trade_type="BUY", methods=("Banesco",))]
+    sell_ads = [make_ad(adv_no="sA", price="830", trade_type="SELL", methods=("Banesco",))]
+    t = target(pay_methods=("Banesco",))
+    opp = find_best_opportunity(buy_ads, sell_ads, t, NOW)
+    assert "/trade/buy/USDT?fiat=VES&payment=Banesco" in opp.buy_url
+    assert "/trade/sell/USDT?fiat=VES&payment=Banesco" in opp.sell_url
 
 
 def test_best_spread_without_threshold():

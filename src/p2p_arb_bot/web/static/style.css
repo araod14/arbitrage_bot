@@ -53,6 +53,7 @@ body {
 .card.narrow { max-width: 520px; margin-inline: auto; }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .8rem; }
 .card-head h2 { margin: 0; font-size: 1rem; }
+.card-head-actions { display: flex; align-items: center; gap: .6rem; }
 
 .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.2rem; }
 .kpi { display: flex; flex-direction: column; gap: .35rem; margin: 0; }

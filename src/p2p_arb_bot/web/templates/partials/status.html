@@ -29,7 +29,7 @@
     <span class="kpi-label">Profit estimado (24 h)</span>
     <span class="kpi-value pos">~{{ '%.2f'|format(stats.total_profit_usdt) }} USDT</span>
     <span class="muted small">
-      {% if stats.last_detection %}última: {{ stats.last_detection[:19] }}{% else %}—{% endif %}
+      {% if stats.last_detection %}última: {{ stats.last_detection_local }}{% else %}—{% endif %}
     </span>
   </div>
 </div>

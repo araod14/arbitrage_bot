@@ -3,7 +3,7 @@
   <table class="data">
     <thead>
       <tr>
-        <th>Detectada</th>
+        <th>Detectada <span class="muted small">(local)</span></th>
         <th>Par</th>
         <th>Compra</th>
         <th>Venta</th>
@@ -16,7 +16,7 @@
     <tbody>
       {% for o in opportunities %}
       <tr>
-        <td class="muted small">{{ o.detected_at[:19] }}</td>
+        <td class="muted small">{{ o.detected_local }}</td>
         <td>{{ o.asset }}/{{ o.fiat }}</td>
         <td>{{ o.buy_price }} <span class="muted small">{{ o.buy_pay_method }}</span></td>
         <td>{{ o.sell_price }} <span class="muted small">{{ o.sell_pay_method }}</span></td>
