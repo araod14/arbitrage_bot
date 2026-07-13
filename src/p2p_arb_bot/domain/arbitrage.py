@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterable
 
-from .models import Ad, Opportunity, WatchTarget, book_url
+from .models import Ad, Opportunity, TradeSizing, WatchTarget, book_url
 
 # Etiqueta interna para el caso "sin filtrar por método" (target sin métodos).
 _ALL = "ALL"
@@ -20,6 +20,54 @@ _ALL = "ALL"
 def amount_in_fiat(max_usdt: Decimal, ref_price: Decimal) -> Decimal:
     """Convierte un monto en USDT a fiat usando un precio de referencia."""
     return max_usdt * ref_price
+
+
+def suggested_trade(
+    max_usdt: Decimal,
+    buy_price: Decimal,
+    sell_price: Decimal,
+    buy_min: Decimal,
+    buy_max: Decimal,
+    sell_min: Decimal,
+    sell_max: Decimal,
+) -> TradeSizing:
+    """Cuánto operar (en USDT y fiat) acotado por el fondo y los límites de anuncio.
+
+    - Piso: ``max`` de los mínimos de compra/venta, cada uno convertido a USDT con
+      su propio precio (``min_amount`` está en fiat).
+    - Techo: el fondo ``max_usdt``, recortado por los máximos de compra/venta (un
+      máximo ``<= 0`` significa "sin dato" y no acota).
+    - Si el piso supera al techo, no es factible: ``usable`` queda a 0.
+
+    Precios ``<= 0`` (datos ausentes/erróneos) se ignoran con seguridad: ese lado no
+    aporta ni piso ni techo. Función pura, sin I/O.
+    """
+
+    def _to_usdt(fiat: Decimal, price: Decimal) -> Decimal | None:
+        if price <= 0 or fiat <= 0:
+            return None
+        return fiat / price
+
+    lows = [v for v in (_to_usdt(buy_min, buy_price), _to_usdt(sell_min, sell_price)) if v is not None]
+    min_required_usdt = max(lows) if lows else Decimal("0")
+
+    usable_usdt = max_usdt
+    for cap in (_to_usdt(buy_max, buy_price), _to_usdt(sell_max, sell_price)):
+        if cap is not None:
+            usable_usdt = min(usable_usdt, cap)
+
+    feasible = usable_usdt >= min_required_usdt
+    if not feasible:
+        usable_usdt = Decimal("0")
+
+    return TradeSizing(
+        usable_usdt=usable_usdt,
+        usable_fiat_buy=usable_usdt * buy_price,
+        usable_fiat_sell=usable_usdt * sell_price,
+        min_required_usdt=min_required_usdt,
+        min_required_fiat_buy=min_required_usdt * buy_price,
+        feasible=feasible,
+    )
 
 
 def accepts_amount(ad: Ad, max_usdt: Decimal, ref_price: Decimal) -> bool:
@@ -239,4 +287,8 @@ def find_best_opportunity(
         ),
         est_profit_fiat=est_profit,
         est_profit_usdt=est_profit_usdt,
+        buy_min_amount=best_buy_ad.min_amount,
+        buy_max_amount=best_buy_ad.max_amount,
+        sell_min_amount=best_sell_ad.min_amount,
+        sell_max_amount=best_sell_ad.max_amount,
     )

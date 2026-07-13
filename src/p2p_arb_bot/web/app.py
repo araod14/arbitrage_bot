@@ -47,6 +47,16 @@ def _humanize_uptime(seconds: int | None) -> str:
     return f"{s}s"
 
 
+def _fmt_miles(value: object) -> str:
+    """Formatea un número con separador de miles con punto (convención VES): 820000 → '820.000'."""
+    try:
+        return f"{round(float(value)):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "—"
+    except Exception:  # p. ej. un Undefined de Jinja: degradar sin romper la página
+        return "—"
+
+
 def create_app() -> FastAPI:
     # Carga .env para que DASHBOARD_PASSWORD/SECRET y las rutas estén disponibles
     # vía os.getenv, igual que hace el bot en Defaults.from_env(). Sin esto, el
@@ -54,6 +64,8 @@ def create_app() -> FastAPI:
     load_dotenv(os.getenv("ENV_PATH") or None)
 
     app = FastAPI(title="P2P Arb Dashboard")
+
+    _TEMPLATES.env.filters["miles"] = _fmt_miles
 
     secret = os.getenv("DASHBOARD_SECRET") or secrets.token_hex(32)
     app.add_middleware(SessionMiddleware, secret_key=secret)
@@ -112,6 +124,13 @@ def create_app() -> FastAPI:
             "opportunities": db_reader.recent_opportunities(p["db_path"], limit=50),
         }
         return _TEMPLATES.TemplateResponse(request, "partials/opportunities.html", ctx)
+
+    @app.get("/partials/trade-amount", response_class=HTMLResponse)
+    def partial_trade_amount(request: Request) -> HTMLResponse:
+        p = _paths()
+        latest = db_reader.recent_opportunities(p["db_path"], limit=1)
+        ctx = {"request": request, "opportunity": latest[0] if latest else None}
+        return _TEMPLATES.TemplateResponse(request, "partials/trade_amount.html", ctx)
 
     @app.get("/partials/log", response_class=HTMLResponse)
     def partial_log(request: Request) -> HTMLResponse:

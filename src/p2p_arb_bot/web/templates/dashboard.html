@@ -10,6 +10,20 @@
 
 <section class="card">
   <div class="card-head">
+    <h2>Monto a usar en la operación</h2>
+    <span class="muted small">última oportunidad · cada 8 s</span>
+  </div>
+  <div id="trade-amount"
+       hx-get="/partials/trade-amount"
+       hx-trigger="every 8s, refresh"
+       hx-swap="innerHTML">
+    {% set opportunity = opportunities[0] if opportunities else None %}
+    {% include "partials/trade_amount.html" %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
     <h2>Oportunidades recientes</h2>
     <div class="card-head-actions">
       <span class="muted small">se actualiza cada 8 s</span>
@@ -19,7 +33,7 @@
               hx-target="#opportunities"
               hx-swap="innerHTML"
               hx-confirm="¿Borrar todas las oportunidades registradas? Esta acción no se puede deshacer."
-              hx-on::after-request="htmx.trigger('#status-panel','refresh')">Limpiar</button>
+              hx-on::after-request="htmx.trigger('#status-panel','refresh'); htmx.trigger('#trade-amount','refresh')">Limpiar</button>
       {% endif %}
     </div>
   </div>

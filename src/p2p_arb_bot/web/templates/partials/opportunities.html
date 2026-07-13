@@ -10,6 +10,7 @@
         <th class="num">Neto</th>
         <th class="num">Spread</th>
         <th class="num">Profit est.</th>
+        <th class="num">Monto a usar</th>
         <th>Publicaciones</th>
       </tr>
     </thead>
@@ -18,11 +19,18 @@
       <tr>
         <td class="muted small">{{ o.detected_local }}</td>
         <td>{{ o.asset }}/{{ o.fiat }}</td>
-        <td>{{ o.buy_price }} <span class="muted small">{{ o.buy_pay_method }}</span></td>
-        <td>{{ o.sell_price }} <span class="muted small">{{ o.sell_pay_method }}</span></td>
+        <td>{{ o.buy_price }}<div class="muted small">{{ o.buy_pay_method }}</div></td>
+        <td>{{ o.sell_price }}<div class="muted small">{{ o.sell_pay_method }}</div></td>
         <td class="num pos">{{ '%.3f'|format(o.net_pct) }}%</td>
         <td class="num">{{ '%.3f'|format(o.spread_pct) }}%</td>
         <td class="num">~{{ '%.2f'|format(o.est_profit_usdt|float) }}</td>
+        <td class="num">
+          {% if o.feasible %}
+          ~{{ o.usable_fiat_buy|miles }} <span class="muted small">{{ o.fiat }}</span>
+          {% else %}
+          <span class="neg small">fondo &lt; mín.</span>
+          {% endif %}
+        </td>
         <td class="small">
           <a href="{{ o.buy_url }}" target="_blank" rel="noopener">Compra</a> ·
           <a href="{{ o.sell_url }}" target="_blank" rel="noopener">Venta</a>

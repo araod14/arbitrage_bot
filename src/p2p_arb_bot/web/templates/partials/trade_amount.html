@@ -1,0 +1,34 @@
+{% if opportunity %}
+  {% set o = opportunity %}
+  {% if o.feasible %}
+  <div class="trade-legs">
+    <div class="trade-leg">
+      <span class="kpi-label">Compra · pagas</span>
+      <span class="trade-amount">~{{ o.usable_fiat_buy|miles }} <span class="unit">{{ o.fiat }}</span></span>
+      <span class="muted small">para obtener {{ '%.2f'|format(o.usable_usdt) }} {{ o.asset }} · {{ o.buy_pay_method }}</span>
+    </div>
+    <div class="trade-arrow" aria-hidden="true">→</div>
+    <div class="trade-leg">
+      <span class="kpi-label">Venta · recibes</span>
+      <span class="trade-amount pos">~{{ o.usable_fiat_sell|miles }} <span class="unit">{{ o.fiat }}</span></span>
+      <span class="muted small">al vender {{ '%.2f'|format(o.usable_usdt) }} {{ o.asset }} · {{ o.sell_pay_method }}</span>
+    </div>
+  </div>
+  <div class="trade-foot muted small">
+    Fondo: {{ '%.2f'|format(o.usable_usdt) }} {{ o.asset }}
+    · Mín. compra: {{ o.buy_min_amount|miles }} {{ o.fiat }}
+    · Mín. venta: {{ o.sell_min_amount|miles }} {{ o.fiat }}
+    · <a href="{{ o.buy_url }}" target="_blank" rel="noopener">libro compra</a>
+    · <a href="{{ o.sell_url }}" target="_blank" rel="noopener">libro venta</a>
+    · {{ o.detected_local }}
+  </div>
+  {% else %}
+  <p class="neg">
+    Tu fondo no alcanza el mínimo de esta oportunidad
+    (se requieren ~{{ o.min_required_fiat_buy|miles }} {{ o.fiat }}).
+    <span class="muted">Aumenta <code>MAX_USDT</code> en la configuración.</span>
+  </p>
+  {% endif %}
+{% else %}
+  <p class="muted empty">Aún no hay oportunidades para dimensionar el monto.</p>
+{% endif %}

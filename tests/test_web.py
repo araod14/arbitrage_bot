@@ -158,6 +158,8 @@ def _seed_db(path: str, *, net_pcts: list[float]) -> None:
                 buy_advertiser="x", sell_advertiser="y",
                 buy_url="http://b", sell_url="http://s",
                 est_profit_usdt=Decimal("1.5"),
+                buy_min_amount=Decimal("100"), buy_max_amount=Decimal("100000"),
+                sell_min_amount=Decimal("100"), sell_max_amount=Decimal("100000"),
             )
         )
     repo.close()
@@ -185,6 +187,71 @@ def test_recent_opportunities(tmp_path):
     rows = db_reader.recent_opportunities(str(db), limit=10)
     assert len(rows) == 2
     assert rows[0]["asset"] == "USDT"
+
+
+def test_recent_opportunities_includes_sizing(tmp_path):
+    db = tmp_path / "opps.db"
+    _seed_db(str(db), net_pcts=[2.0])
+    row = db_reader.recent_opportunities(str(db), limit=1)[0]
+    # Fondo 100 USDT dentro de los límites -> usable = fondo, factible.
+    assert row["feasible"] is True
+    assert row["usable_usdt"] == 100.0
+    assert row["usable_fiat_buy"] == 3600.0   # 100 * 36
+    assert row["usable_fiat_sell"] == 3700.0  # 100 * 37
+
+
+def test_recent_opportunities_degrades_on_old_schema(tmp_path):
+    """Una DB con esquema viejo (sin columnas de límites) no rompe y degrada al fondo."""
+    db = tmp_path / "old.db"
+    # Esquema mínimo previo, sin las columnas de límites de anuncio.
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        """
+        CREATE TABLE opportunities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            detected_at TEXT NOT NULL, fiat TEXT NOT NULL, asset TEXT NOT NULL,
+            buy_pay_method TEXT NOT NULL, sell_pay_method TEXT NOT NULL,
+            buy_price TEXT NOT NULL, sell_price TEXT NOT NULL,
+            spread_pct REAL NOT NULL, net_pct REAL NOT NULL, max_usdt TEXT NOT NULL,
+            buy_adv_no TEXT NOT NULL, sell_adv_no TEXT NOT NULL,
+            buy_advertiser TEXT NOT NULL, sell_advertiser TEXT NOT NULL,
+            buy_url TEXT NOT NULL, sell_url TEXT NOT NULL,
+            est_profit_usdt TEXT NOT NULL DEFAULT '0'
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO opportunities (detected_at, fiat, asset, buy_pay_method, "
+        "sell_pay_method, buy_price, sell_price, spread_pct, net_pct, max_usdt, "
+        "buy_adv_no, sell_adv_no, buy_advertiser, sell_advertiser, buy_url, sell_url) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (datetime.now(timezone.utc).isoformat(), "VES", "USDT", "A", "B",
+         "36", "37", 2.2, 2.0, "100", "b0", "s0", "x", "y", "http://b", "http://s"),
+    )
+    conn.commit()
+    conn.close()
+    # Sin migrar (lectura pura del dashboard): degrada al fondo, sin mínimos.
+    row = db_reader.recent_opportunities(str(db), limit=1)[0]
+    assert row["feasible"] is True
+    assert row["usable_usdt"] == 100.0
+    # Las claves de mínimos deben existir (0) aunque falten en el esquema, para
+    # que la plantilla del dashboard no falle al renderizarlas.
+    assert row["buy_min_amount"] == 0.0
+    assert row["sell_min_amount"] == 0.0
+
+
+def test_migration_adds_limit_columns(tmp_path):
+    """Abrir una DB vieja con SQLiteRepository añade las columnas de límites."""
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE opportunities (id INTEGER PRIMARY KEY, detected_at TEXT)")
+    conn.commit()
+    conn.close()
+    repo = SQLiteRepository(str(db))
+    cols = {r[1] for r in repo._conn.execute("PRAGMA table_info(opportunities)")}
+    repo.close()
+    assert {"buy_min_amount", "buy_max_amount",
+            "sell_min_amount", "sell_max_amount"} <= cols
 
 
 def test_clear_opportunities(tmp_path):

@@ -111,6 +111,13 @@ class Opportunity:
     est_profit_fiat: Decimal = field(default=Decimal("0"))
     # Ganancia neta estimada expresada en USDT (max_usdt * net_pct / 100). Se persiste.
     est_profit_usdt: Decimal = field(default=Decimal("0"))
+    # Límites de transacción (en fiat) de los anuncios elegidos, para dimensionar el
+    # monto a operar en el dashboard. minSingleTransAmount / maxSingleTransAmount.
+    # Default 0 => "sin dato" (retrocompat con filas/registros antiguos). Se persisten.
+    buy_min_amount: Decimal = field(default=Decimal("0"))
+    buy_max_amount: Decimal = field(default=Decimal("0"))
+    sell_min_amount: Decimal = field(default=Decimal("0"))
+    sell_max_amount: Decimal = field(default=Decimal("0"))
 
     @property
     def dedup_key(self) -> tuple[str, str, str, str]:
@@ -121,3 +128,21 @@ class Opportunity:
             str(self.buy_price),
             str(self.sell_price),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TradeSizing:
+    """Monto a operar en una oportunidad, acotado por fondo y límites de anuncio.
+
+    ``usable`` es lo que conviene mover (el fondo, salvo que un máximo lo recorte);
+    ``min_required`` es el piso impuesto por los mínimos de compra/venta. Si el fondo
+    no alcanza el mínimo, ``feasible`` es ``False`` y ``usable_*`` quedan a 0.
+    Los montos ``*_fiat`` están en la moneda fiat (VES); ``*_usdt`` en USDT.
+    """
+
+    usable_usdt: Decimal
+    usable_fiat_buy: Decimal        # fiat que pagas al comprar usable_usdt
+    usable_fiat_sell: Decimal       # fiat que recibes al vender usable_usdt
+    min_required_usdt: Decimal
+    min_required_fiat_buy: Decimal  # fiat mínimo a mover en la compra
+    feasible: bool

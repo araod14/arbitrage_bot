@@ -29,7 +29,11 @@ CREATE TABLE IF NOT EXISTS opportunities (
     sell_advertiser TEXT    NOT NULL,
     buy_url         TEXT    NOT NULL,
     sell_url        TEXT    NOT NULL,
-    est_profit_usdt TEXT    NOT NULL DEFAULT '0'
+    est_profit_usdt TEXT    NOT NULL DEFAULT '0',
+    buy_min_amount  TEXT    NOT NULL DEFAULT '0',
+    buy_max_amount  TEXT    NOT NULL DEFAULT '0',
+    sell_min_amount TEXT    NOT NULL DEFAULT '0',
+    sell_max_amount TEXT    NOT NULL DEFAULT '0'
 );
 CREATE INDEX IF NOT EXISTS idx_opportunities_detected_at
     ON opportunities (detected_at);
@@ -52,11 +56,18 @@ class SQLiteRepository:
         existing = {
             row[1] for row in self._conn.execute("PRAGMA table_info(opportunities)")
         }
-        if "est_profit_usdt" not in existing:
-            self._conn.execute(
-                "ALTER TABLE opportunities "
-                "ADD COLUMN est_profit_usdt TEXT NOT NULL DEFAULT '0'"
-            )
+        for column in (
+            "est_profit_usdt",
+            "buy_min_amount",
+            "buy_max_amount",
+            "sell_min_amount",
+            "sell_max_amount",
+        ):
+            if column not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE opportunities "
+                    f"ADD COLUMN {column} TEXT NOT NULL DEFAULT '0'"
+                )
 
     def save(self, opp: Opportunity) -> None:
         self._conn.execute(
@@ -65,8 +76,9 @@ class SQLiteRepository:
                 detected_at, fiat, asset, buy_pay_method, sell_pay_method,
                 buy_price, sell_price, spread_pct, net_pct, max_usdt,
                 buy_adv_no, sell_adv_no, buy_advertiser, sell_advertiser,
-                buy_url, sell_url, est_profit_usdt
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                buy_url, sell_url, est_profit_usdt,
+                buy_min_amount, buy_max_amount, sell_min_amount, sell_max_amount
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 opp.detected_at.isoformat(),
@@ -86,6 +98,10 @@ class SQLiteRepository:
                 opp.buy_url,
                 opp.sell_url,
                 str(opp.est_profit_usdt),
+                str(opp.buy_min_amount),
+                str(opp.buy_max_amount),
+                str(opp.sell_min_amount),
+                str(opp.sell_max_amount),
             ),
         )
         self._conn.commit()

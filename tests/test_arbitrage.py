@@ -17,6 +17,7 @@ from p2p_arb_bot.domain.arbitrage import (
     drop_outliers,
     find_best_opportunity,
     has_inventory,
+    suggested_trade,
 )
 from p2p_arb_bot.domain.models import Ad, WatchTarget
 
@@ -178,6 +179,63 @@ def test_opportunity_detected_above_threshold():
     # spread = 20/800*100 = 2.5%
     assert opp.spread_pct == D("2.5")
     assert opp.net_pct == D("2.5")
+
+
+def test_opportunity_carries_ad_limits():
+    buy_ads = [make_ad(adv_no="b1", price="800", trade_type="BUY",
+                       min_amount="50000", max_amount="900000")]
+    sell_ads = [make_ad(adv_no="s1", price="820", trade_type="SELL",
+                        min_amount="10000", max_amount="800000")]
+    opp = find_best_opportunity(buy_ads, sell_ads, target(threshold_pct=D("1.0")), NOW)
+    assert opp is not None
+    assert opp.buy_min_amount == D("50000")
+    assert opp.buy_max_amount == D("900000")
+    assert opp.sell_min_amount == D("10000")
+    assert opp.sell_max_amount == D("800000")
+
+
+# --- suggested_trade ---------------------------------------------------------
+
+def _sizing(**kw):
+    base = dict(
+        max_usdt=D("100"), buy_price=D("800"), sell_price=D("820"),
+        buy_min=D("0"), buy_max=D("0"), sell_min=D("0"), sell_max=D("0"),
+    )
+    base.update(kw)
+    return suggested_trade(**base)  # type: ignore[arg-type]
+
+
+def test_suggested_trade_uses_full_fund_when_within_limits():
+    # Fondo 100 USDT * 800 = 80.000 VES de compra; mínimos por debajo, sin tope.
+    s = _sizing(buy_min=D("50000"), sell_min=D("10000"))
+    assert s.feasible is True
+    assert s.usable_usdt == D("100")
+    assert s.usable_fiat_buy == D("80000")   # 100 * 800
+    assert s.usable_fiat_sell == D("82000")  # 100 * 820
+
+
+def test_suggested_trade_infeasible_when_fund_below_minimum():
+    # Mínimo de compra 200.000 VES -> requiere 250 USDT, pero el fondo es 100.
+    s = _sizing(buy_min=D("200000"))
+    assert s.feasible is False
+    assert s.usable_usdt == D("0")
+    assert s.min_required_usdt == D("250")          # 200000 / 800
+    assert s.min_required_fiat_buy == D("200000")   # 250 * 800
+
+
+def test_suggested_trade_capped_by_ad_maximum():
+    # Máximo de venta 41.000 VES -> 50 USDT; recorta el fondo de 100.
+    s = _sizing(sell_max=D("41000"))
+    assert s.feasible is True
+    assert s.usable_usdt == D("50")                 # 41000 / 820
+    assert s.usable_fiat_buy == D("40000")          # 50 * 800
+
+
+def test_suggested_trade_safe_with_zero_price():
+    # Precio 0 (dato ausente) no debe romper ni acotar por ese lado.
+    s = _sizing(buy_price=D("0"), buy_min=D("50000"))
+    assert s.usable_usdt == D("100")  # el fondo no se recorta
+    assert s.feasible is True
 
 
 def test_est_profit_usdt_from_net_pct():

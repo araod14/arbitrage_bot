@@ -17,8 +17,51 @@ import os
 import sqlite3
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
+
+from ..domain.arbitrage import suggested_trade
 
 logger = logging.getLogger(__name__)
+
+
+def _dec(value: object) -> Decimal:
+    """Convierte un valor de la DB a Decimal de forma segura (0 si no se puede)."""
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
+
+
+def _add_sizing(row: dict) -> None:
+    """Añade al dict de una oportunidad el monto a usar (VES/USDT) y factibilidad.
+
+    Calcula con la función pura del dominio a partir del fondo (``max_usdt``), los
+    precios y los límites persistidos. Degrada con gracia: si faltan datos (filas
+    antiguas con columnas a 0), los máximos no acotan y el mínimo requerido es 0, así
+    que ``usable`` cae al fondo. Los valores se exponen como ``float`` para la plantilla.
+    """
+    try:
+        sizing = suggested_trade(
+            max_usdt=_dec(row.get("max_usdt")),
+            buy_price=_dec(row.get("buy_price")),
+            sell_price=_dec(row.get("sell_price")),
+            buy_min=_dec(row.get("buy_min_amount")),
+            buy_max=_dec(row.get("buy_max_amount")),
+            sell_min=_dec(row.get("sell_min_amount")),
+            sell_max=_dec(row.get("sell_max_amount")),
+        )
+    except (InvalidOperation, ZeroDivisionError):  # pragma: no cover - defensa extra
+        return
+    row["usable_usdt"] = float(sizing.usable_usdt)
+    row["usable_fiat_buy"] = float(sizing.usable_fiat_buy)
+    row["usable_fiat_sell"] = float(sizing.usable_fiat_sell)
+    row["min_required_usdt"] = float(sizing.min_required_usdt)
+    row["min_required_fiat_buy"] = float(sizing.min_required_fiat_buy)
+    row["feasible"] = sizing.feasible
+    # Normaliza los mínimos como float y garantiza su presencia aunque la fila
+    # venga de un esquema viejo sin esas columnas (la plantilla los muestra).
+    row["buy_min_amount"] = float(_dec(row.get("buy_min_amount")))
+    row["sell_min_amount"] = float(_dec(row.get("sell_min_amount")))
 
 
 def to_local(iso: str | None) -> str:
@@ -49,27 +92,44 @@ def _connect_ro(db_path: str) -> sqlite3.Connection | None:
     return conn
 
 
+# Columnas base (siempre presentes) y opcionales (añadidas por migración del bot).
+# El dashboard abre la DB en solo-lectura y NUNCA migra, así que si consulta antes de
+# que el bot arranque con el esquema nuevo, las opcionales pueden no existir: se
+# seleccionan solo las presentes y ``_add_sizing`` degrada al fondo si faltan.
+_BASE_COLS = (
+    "detected_at, asset, fiat, buy_pay_method, sell_pay_method, "
+    "buy_price, sell_price, spread_pct, net_pct, max_usdt, "
+    "buy_advertiser, sell_advertiser, buy_url, sell_url, est_profit_usdt"
+)
+_SIZING_COLS = (
+    "buy_min_amount",
+    "buy_max_amount",
+    "sell_min_amount",
+    "sell_max_amount",
+)
+
+
+def _existing_columns(conn: sqlite3.Connection) -> set[str]:
+    return {row[1] for row in conn.execute("PRAGMA table_info(opportunities)")}
+
+
 def recent_opportunities(db_path: str, limit: int = 50) -> list[dict]:
     """Últimas oportunidades detectadas, más recientes primero."""
     conn = _connect_ro(db_path)
     if conn is None:
         return []
     try:
+        available = _existing_columns(conn)
+        extra = [c for c in _SIZING_COLS if c in available]
+        cols = _BASE_COLS + ("".join(f", {c}" for c in extra))
         cur = conn.execute(
-            """
-            SELECT detected_at, asset, fiat, buy_pay_method, sell_pay_method,
-                   buy_price, sell_price, spread_pct, net_pct, max_usdt,
-                   buy_advertiser, sell_advertiser, buy_url, sell_url,
-                   est_profit_usdt
-            FROM opportunities
-            ORDER BY detected_at DESC
-            LIMIT ?
-            """,
+            f"SELECT {cols} FROM opportunities ORDER BY detected_at DESC LIMIT ?",
             (limit,),
         )
         rows = [dict(row) for row in cur.fetchall()]
         for row in rows:
             row["detected_local"] = to_local(row.get("detected_at"))
+            _add_sizing(row)
         return rows
     except sqlite3.Error as exc:
         logger.warning("Error leyendo oportunidades: %s", exc)
