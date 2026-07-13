@@ -116,7 +116,10 @@ def create_app() -> FastAPI:
     @app.get("/partials/log", response_class=HTMLResponse)
     def partial_log(request: Request) -> HTMLResponse:
         p = _paths()
-        ctx = {"request": request, "log_lines": db_reader.tail_log(p["log_path"], 120)}
+        ctx = {
+            "request": request,
+            "log_lines": db_reader.tail_log(p["log_path"], 120, newest_first=True),
+        }
         return _TEMPLATES.TemplateResponse(request, "partials/log.html", ctx)
 
     # --- login ----------------------------------------------------------
@@ -193,6 +196,9 @@ def create_app() -> FastAPI:
     ) -> HTMLResponse:
         p = _paths()
         db_reader.clear_opportunities(p["db_path"])
+        # También el status.json: reinicia el "mejor spread" y la última oportunidad.
+        # El botón dispara además un refresh de #status-panel (KPIs de 24 h y spread).
+        db_reader.clear_status(p["status_path"])
         # Devuelve la tabla ya vacía para que HTMX la reemplace en el acto.
         return _TEMPLATES.TemplateResponse(
             request,

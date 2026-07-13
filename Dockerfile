@@ -11,6 +11,7 @@ ENV PYTHONUNBUFFERED=1 \
     DB_PATH=/data/opportunities.db \
     LOG_PATH=/data/p2p_arb_bot.log \
     STATUS_PATH=/data/status.json \
+    SCREENSHOTS_DIR=/data/screenshots \
     BOT_PIDFILE=/data/bot.pid \
     ENV_PATH=/app/.env \
     DASHBOARD_HOST=0.0.0.0 \
@@ -18,6 +19,10 @@ ENV PYTHONUNBUFFERED=1 \
     NO_INPUT=true
 
 WORKDIR /app
+
+# Nota: la fuente para las capturas PNG va empaquetada con el paquete
+# (p2p_arb_bot/infrastructure/fonts), así que la imagen slim no necesita
+# instalar fuentes del sistema (ni egress de apt en build).
 
 # Instala dependencias primero para aprovechar la caché de capas de Docker.
 COPY requirements.txt ./

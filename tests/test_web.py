@@ -201,6 +201,15 @@ def test_clear_opportunities_missing_db(tmp_path):
     assert db_reader.clear_opportunities(str(tmp_path / "nope.db")) == 0
 
 
+def test_clear_status_removes_file(tmp_path):
+    status = tmp_path / "status.json"
+    status.write_text('{"best_net_pct": 1.2, "target": "USDT/VES"}', encoding="utf-8")
+    assert db_reader.clear_status(str(status)) is True
+    assert db_reader.read_status(str(status)) is None
+    # Idempotente: si ya no existe, no falla y devuelve False.
+    assert db_reader.clear_status(str(status)) is False
+
+
 def test_read_status_missing(tmp_path):
     assert db_reader.read_status(str(tmp_path / "nope.json")) is None
 
@@ -210,3 +219,41 @@ def test_tail_log(tmp_path):
     log.write_text("\n".join(f"line {i}" for i in range(10)) + "\n", encoding="utf-8")
     tail = db_reader.tail_log(str(log), lines=3)
     assert tail == ["line 7", "line 8", "line 9"]
+
+
+def test_tail_log_newest_first_reorders_heartbeats(tmp_path):
+    log = tmp_path / "bot.log"
+    log.write_text(
+        "[13:00:01] USDT/VES  spread 0.1%\n"
+        "[13:00:02] USDT/VES  spread 0.2%\n"
+        "[13:00:03] USDT/VES  spread 0.3%\n",
+        encoding="utf-8",
+    )
+    lines = db_reader.tail_log(str(log), lines=10, newest_first=True)
+    assert lines[0] == "[13:00:03] USDT/VES  spread 0.3%"
+    assert lines[-1] == "[13:00:01] USDT/VES  spread 0.1%"
+
+
+def test_tail_log_newest_first_keeps_panel_block_intact(tmp_path):
+    log = tmp_path / "bot.log"
+    log.write_text(
+        "[13:00:01] USDT/VES  spread 0.1%\n"
+        "╭──── OPORTUNIDAD ────╮\n"
+        "│ Ganancia NETA 0.7%  │\n"
+        "╰── detectada 13:00:02 ─╯\n"
+        "[13:00:03] USDT/VES  spread 0.3%\n",
+        encoding="utf-8",
+    )
+    lines = db_reader.tail_log(str(log), lines=10, newest_first=True)
+    # El heartbeat más reciente va primero.
+    assert lines[0] == "[13:00:03] USDT/VES  spread 0.3%"
+    # El panel va por encima del heartbeat viejo y conserva su orden interno.
+    panel = [ln for ln in lines if ln.startswith(("╭", "│", "╰"))]
+    assert panel == [
+        "╭──── OPORTUNIDAD ────╮",
+        "│ Ganancia NETA 0.7%  │",
+        "╰── detectada 13:00:02 ─╯",
+    ]
+    i_panel_top = lines.index("╭──── OPORTUNIDAD ────╮")
+    i_old_hb = lines.index("[13:00:01] USDT/VES  spread 0.1%")
+    assert i_panel_top < i_old_hb

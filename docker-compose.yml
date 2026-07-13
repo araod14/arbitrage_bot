@@ -15,6 +15,7 @@ services:
       DB_PATH: "/data/opportunities.db"
       LOG_PATH: "/data/p2p_arb_bot.log"
       STATUS_PATH: "/data/status.json"
+      SCREENSHOTS_DIR: "/data/screenshots"
       BOT_PIDFILE: "/data/bot.pid"
       # El dashboard edita este .env al guardar config; el bind-mount de abajo
       # lo deja en el mismo fichero que lee env_file.

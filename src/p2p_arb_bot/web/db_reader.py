@@ -4,8 +4,9 @@ El dashboard corre en un proceso distinto al del bot. Para no interferir con las
 escrituras del bot, abre SQLite en modo ``ro`` (read-only) vía URI y nunca crea
 ni migra la base. Si la DB aún no existe (bot nunca arrancado), degrada a vacío.
 
-Única excepción: ``clear_opportunities`` (acción manual del usuario) abre en
-lectura-escritura para vaciar la tabla; no crea ni migra el esquema.
+Únicas escrituras: ``clear_opportunities`` (vacía la tabla en lectura-escritura,
+sin crear ni migrar el esquema) y ``clear_status`` (borra ``status.json``), ambas
+como acción manual del usuario desde el botón "Limpiar".
 """
 
 from __future__ import annotations
@@ -145,6 +146,24 @@ def clear_opportunities(db_path: str) -> int:
         conn.close()
 
 
+def clear_status(status_path: str) -> bool:
+    """Borra ``status.json`` para reiniciar los KPIs en vivo. Acción manual del usuario.
+
+    Deja en blanco el "mejor spread neto actual" y la última oportunidad que el bot
+    publica en ``status.json``. Si el bot sigue corriendo, lo reescribirá con el valor
+    actual en su próximo ciclo (es una métrica en vivo); si está parado, queda vacío.
+    Devuelve ``True`` si borró el fichero.
+    """
+    if not os.path.exists(status_path):
+        return False
+    try:
+        os.remove(status_path)
+        return True
+    except OSError as exc:
+        logger.warning("Error borrando status %s: %s", status_path, exc)
+        return False
+
+
 def read_status(status_path: str) -> dict | None:
     """Lee el status.json escrito por el bot. ``None`` si no existe/ilegible."""
     if not os.path.exists(status_path):
@@ -157,13 +176,42 @@ def read_status(status_path: str) -> dict | None:
         return None
 
 
-def tail_log(log_path: str, lines: int = 100) -> list[str]:
-    """Devuelve las últimas ``lines`` líneas del log (vacío si no existe)."""
+def _group_log_entries(lines: list[str]) -> list[list[str]]:
+    """Agrupa líneas de log en entradas (bloques) preservando su orden interno.
+
+    Cada heartbeat de una línea (``[HH:MM:SS] …``) es una entrada. Cada panel de
+    oportunidad de ``rich`` (``╭…`` + ``│…`` + ``╰…``) es una única entrada con todas
+    sus líneas juntas. Se abre una entrada nueva cuando la línea, tras quitarle
+    espacios y control iniciales (p. ej. el BEEP ``\\x07``), empieza por ``[`` o ``╭``;
+    el resto continúa la entrada actual. Las líneas previas al primer límite forman
+    su propia entrada inicial.
+    """
+    entries: list[list[str]] = []
+    for line in lines:
+        head = line.lstrip("\x07 \t")
+        if head.startswith("[") or head.startswith("╭") or not entries:
+            entries.append([line])
+        else:
+            entries[-1].append(line)
+    return entries
+
+
+def tail_log(log_path: str, lines: int = 100, *, newest_first: bool = False) -> list[str]:
+    """Devuelve las últimas ``lines`` líneas del log (vacío si no existe).
+
+    Con ``newest_first=True`` se agrupan las líneas en entradas (ver
+    ``_group_log_entries``) y se devuelven con la entrada más reciente primero,
+    manteniendo intacto el orden interno de los paneles multilínea.
+    """
     if not os.path.exists(log_path):
         return []
     try:
         with open(log_path, encoding="utf-8", errors="replace") as fh:
-            return [ln.rstrip("\n") for ln in deque(fh, maxlen=lines)]
+            tail = [ln.rstrip("\n") for ln in deque(fh, maxlen=lines)]
     except OSError as exc:
         logger.warning("Error leyendo log %s: %s", log_path, exc)
         return []
+    if not newest_first:
+        return tail
+    entries = _group_log_entries(tail)
+    return [line for entry in reversed(entries) for line in entry]

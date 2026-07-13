@@ -1,0 +1,8 @@
+Fuente empaquetada: Liberation Sans (LiberationSans-Regular.ttf)
+
+Se incluye para renderizar las capturas PNG de oportunidades con buena cobertura
+latina (acentos, ñ) sin depender de fuentes del sistema.
+
+Liberation Fonts — Copyright Red Hat, Inc.
+Licencia: SIL Open Font License, Version 1.1 (https://scripts.sil.org/OFL)
+Proyecto: https://github.com/liberationfonts/liberation-fonts

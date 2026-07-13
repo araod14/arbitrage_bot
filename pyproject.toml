@@ -17,6 +17,7 @@ dependencies = [
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
     "itsdangerous>=2.1",
+    "Pillow>=10.1",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "p2p_arb_bot.web" = ["templates/*.html", "templates/partials/*.html", "static/*"]
+"p2p_arb_bot.infrastructure" = ["fonts/*.ttf"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

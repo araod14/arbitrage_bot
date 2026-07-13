@@ -172,6 +172,42 @@ en los logs indican precisamente falta de egress.
 Hay oportunidad cuando `best_sell > best_buy` y `net_pct ≥ umbral`, con
 `net_pct = spread_pct − fee_buffer_pct`.
 
+### Interpretar el heartbeat (`sin datos / sin pares elegibles`)
+
+Cuando **no** hay oportunidad, el bot imprime una línea de estado (heartbeat) en
+lugar de un panel. Puede decir dos cosas:
+
+- **`mejor spread neto X%`** — sí encontró al menos una pareja compra/venta
+  elegible, pero el mejor spread quedó por debajo de tu umbral. Es lo normal la
+  mayor parte del tiempo.
+- **`sin datos / sin pares elegibles`** — en ese ciclo **no encontró ni una sola
+  pareja compra-venta con la que calcular un spread**. No es un error: el bot está
+  avisando honestamente de que no había nada que comparar.
+
+Para poder comparar, el bot necesita **al menos un anuncio de compra Y uno de
+venta que sobrevivan a estos 4 filtros** (`domain/arbitrage.py`, función
+`_eligible`). Si **cualquiera de los dos lados** queda vacío, no hay par →
+`sin datos / sin pares elegibles`:
+
+1. **Método de pago** — que el anuncio use uno de tus `PAY_METHODS`
+   (vacío = se aceptan todos).
+2. **Acepta tu monto** (`accepts_amount`) — que tu operación quepa entre el
+   mín/máx del anuncio. El monto fiat se calcula como `MAX_USDT × precio`
+   (p. ej. `100 USDT × 825 ≈ 82.500 VES`), así que un `MAX_USDT` bajo puede no
+   encajar en anuncios con mínimos altos, y uno alto puede pasarse del máximo.
+3. **Inventario** (`has_inventory`) — que al anunciante le queden ≥ `MAX_USDT`
+   disponibles (`surplusAmount`).
+4. **Outliers** — que el precio no se desvíe de la mediana más de
+   `OUTLIER_MAX_DEV_PCT` (descarta precios "cebo"). `0` desactiva este filtro.
+
+Si ves ese mensaje de forma persistente y **sin que se registren oportunidades**
+(la tabla `opportunities` sigue vacía), casi siempre es por **configuración
+demasiado restrictiva**, no por un fallo de red: revisa `MAX_USDT` (prueba un
+valor que encaje con los límites típicos del par), reduce la lista de
+`PAY_METHODS` o déjala vacía, y afloja/ajusta `OUTLIER_MAX_DEV_PCT`. Que el bot
+traiga anuncios pero no forme pares confirma que el egress a Binance funciona; el
+cuello de botella son los filtros de elegibilidad.
+
 ## Base de datos
 
 Tabla `opportunities` (SQLite, ruta en `DB_PATH`) con `detected_at`, par,

@@ -44,7 +44,8 @@ src/p2p_arb_bot/
 │   ├── discovery.py       # Descubre métodos de pago disponibles
 │   ├── sqlite_repo.py     # OpportunityRepository (SQLite)
 │   ├── console_notifier.py# Notifier (rich)
-│   └── status_notifier.py # Notifier que vuelca status.json para el dashboard
+│   ├── status_notifier.py # Notifier que vuelca status.json para el dashboard
+│   └── screenshot_notifier.py # Notifier que guarda un PNG "ficha" por oportunidad (Pillow)
 ├── config.py        # Defaults.from_env() + AppConfig (tipado, validado)
 ├── main.py          # Composition root: ÚNICO módulo que conoce las clases concretas
 └── web/             # Dashboard FastAPI + HTMX (proceso aparte del bot)
@@ -118,7 +119,8 @@ como predeterminados; en modo interactivo cada prompt los ofrece como default.
 `NO_INPUT=true` salta los prompts (cron/Docker). Claves: `ASSET`, `FIAT`,
 `PAY_METHODS`, `MAX_USDT`, `THRESHOLD_PCT`, `FEE_BUFFER_PCT`, `OUTLIER_MAX_DEV_PCT`,
 `MERCHANT_CHECK`, `POLL_INTERVAL_S`, `DB_PATH`, `LOG_PATH`, `STATUS_PATH`,
-`IMPERSONATE`, `PROXY`, `BEEP`, `NO_INPUT`, `DASHBOARD_*`, `ENV_PATH`, `BOT_PIDFILE`.
+`SCREENSHOTS_DIR`, `SCREENSHOTS`, `IMPERSONATE`, `PROXY`, `BEEP`, `NO_INPUT`,
+`DASHBOARD_*`, `ENV_PATH`, `BOT_PIDFILE`.
 
 ## Base de datos
 
