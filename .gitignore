@@ -25,8 +25,13 @@ dist/
 *.sqlite
 *.sqlite3
 *.log
+*.out
 status.json
 *.pid
+
+# Fichas PNG por oportunidad (SCREENSHOTS_DIR local y mount de docker-compose)
+screenshots/
+capturas_oportunidades/
 
 # Editores / SO
 .idea/
