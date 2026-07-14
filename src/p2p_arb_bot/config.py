@@ -55,7 +55,7 @@ class Defaults:
     log_path: str = "p2p_arb_bot.log"
     status_path: str = "status.json"
     screenshots_dir: str = "screenshots"
-    screenshots_enabled: bool = True
+    screenshots_enabled: bool = False
     impersonate: str = "chrome"
     proxy: str | None = None
     beep: bool = True
@@ -81,7 +81,7 @@ class Defaults:
             log_path=os.getenv("LOG_PATH", "p2p_arb_bot.log") or "p2p_arb_bot.log",
             status_path=os.getenv("STATUS_PATH", "status.json") or "status.json",
             screenshots_dir=os.getenv("SCREENSHOTS_DIR", "screenshots") or "screenshots",
-            screenshots_enabled=_get_bool("SCREENSHOTS", True),
+            screenshots_enabled=_get_bool("SCREENSHOTS", False),
             impersonate=os.getenv("IMPERSONATE", "chrome") or "chrome",
             proxy=os.getenv("PROXY") or None,
             beep=_get_bool("BEEP", True),

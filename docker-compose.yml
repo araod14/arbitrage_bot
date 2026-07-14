@@ -10,6 +10,10 @@ services:
     environment:
       # El bot (subproceso lanzado por el dashboard) corre sin prompts.
       NO_INPUT: "true"
+      # Fichas PNG por oportunidad: función dev-only, apagada en producción.
+      # (environment tiene prioridad sobre env_file, así que blinda aunque el .env
+      # traiga SCREENSHOTS=true.)
+      SCREENSHOTS: "false"
       # DB, logs y estado van al volumen persistente (/data), no a la capa
       # efímera del contenedor. Así sobreviven a recreaciones.
       DB_PATH: "/data/opportunities.db"
@@ -27,6 +31,9 @@ services:
       - arb-data:/data
       # .env editable desde el dashboard (mismo fichero que lee env_file).
       - ./.env:/app/.env
+      # Capturas (fichas PNG por oportunidad) visibles directamente en el host.
+      # Se monta sobre SCREENSHOTS_DIR (/data/screenshots) para verlas sin docker cp.
+      - ./capturas_oportunidades:/data/screenshots
     restart: unless-stopped
     # Permiten correr el bot por CLI con `docker compose run --rm dashboard ...`.
     stdin_open: true
