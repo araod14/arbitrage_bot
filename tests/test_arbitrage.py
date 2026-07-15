@@ -17,6 +17,7 @@ from p2p_arb_bot.domain.arbitrage import (
     drop_outliers,
     find_best_opportunity,
     has_inventory,
+    realized_pnl,
     suggested_trade,
 )
 from p2p_arb_bot.domain.models import Ad, WatchTarget
@@ -377,3 +378,38 @@ def test_without_filter_bait_produces_fake_spread():
     opp = find_best_opportunity(buy_ads, sell_ads, t, NOW)
     assert opp is not None
     assert opp.sell_adv_no == "bait"
+
+
+# --- ganancia real (operación ya ejecutada a mano) --------------------------
+
+def test_realized_pnl_gain():
+    # Pagó 3600 VES por 100 USDT y recibió 3700 al venderlos.
+    r = realized_pnl(fiat_in=D("3600"), fiat_out=D("3700"), usdt=D("100"))
+    assert r.profit_fiat == D("100")
+    assert round(r.net_pct, 3) == D("2.778")
+    # 100 VES de ganancia valen 100/36 = 2.78 USDT al precio de compra real.
+    assert round(r.profit_usdt, 3) == D("2.778")
+
+
+def test_realized_pnl_loss():
+    r = realized_pnl(fiat_in=D("3600"), fiat_out=D("3500"), usdt=D("100"))
+    assert r.profit_fiat == D("-100")
+    assert r.net_pct < 0
+
+
+def test_realized_pnl_uses_fiat_not_prices():
+    """Las comisiones se comen el spread: el % real sale de lo que movió el banco.
+
+    Los precios nominales darían 2.778%, pero si al vender solo entraron 3650
+    (comisión mediante), lo real es la mitad. Ese hueco es lo que interesa medir.
+    """
+    r = realized_pnl(fiat_in=D("3600"), fiat_out=D("3650"), usdt=D("100"))
+    assert round(r.net_pct, 3) == D("1.389")
+
+
+def test_realized_pnl_without_investment_is_zero():
+    # Sin fiat invertido no hay % que calcular: cero, no división por cero.
+    r = realized_pnl(fiat_in=D("0"), fiat_out=D("100"), usdt=D("10"))
+    assert r.profit_fiat == D("0")
+    assert r.net_pct == D("0")
+    assert r.profit_usdt == D("0")

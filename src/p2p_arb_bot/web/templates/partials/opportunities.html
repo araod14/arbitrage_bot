@@ -12,11 +12,18 @@
         <th class="num">Profit est.</th>
         <th class="num">Monto a usar</th>
         <th>Publicaciones</th>
+        {% if authed %}<th class="col-actions">Registro</th>{% endif %}
       </tr>
     </thead>
     <tbody>
       {% for o in opportunities %}
-      <tr>
+      {# Los data-* alimentan static/notify.js: compara data-opp-id con el último
+         visto para decidir si la fila es nueva y qué mostrar en el aviso. #}
+      <tr data-opp-id="{{ o.id }}"
+          data-buy-url="{{ o.buy_url }}"
+          data-pair="{{ o.asset }}/{{ o.fiat }}"
+          data-net="{{ '%.3f'|format(o.net_pct) }}"
+          data-amount="{% if o.feasible %}{{ o.usable_fiat_buy|miles }} {{ o.fiat }}{% endif %}">
         <td class="muted small">{{ o.detected_local }}</td>
         <td>{{ o.asset }}/{{ o.fiat }}</td>
         <td>{{ o.buy_price }}<div class="muted small">{{ o.buy_pay_method }}</div></td>
@@ -35,6 +42,16 @@
           <a href="{{ o.buy_url }}" target="_blank" rel="noopener">Compra</a> ·
           <a href="{{ o.sell_url }}" target="_blank" rel="noopener">Venta</a>
         </td>
+        {% if authed %}
+        <td class="col-actions">
+          <div class="row-actions">
+            <button class="btn tiny" hx-get="/trades/new?opp_id={{ o.id }}"
+                    hx-target="#trade-form" hx-swap="innerHTML">Registrar</button>
+            <button class="btn tiny" hx-get="/trades/fail?opp_id={{ o.id }}"
+                    hx-target="#trade-form" hx-swap="innerHTML">No pude</button>
+          </div>
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>

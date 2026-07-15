@@ -27,6 +27,7 @@
     <h2>Oportunidades recientes</h2>
     <div class="card-head-actions">
       <span class="muted small">se actualiza cada 8 s</span>
+      <button class="btn" type="button" id="notify-toggle" disabled>Activar avisos</button>
       {% if authed %}
       <button class="btn"
               hx-post="/opportunities/clear"
@@ -44,6 +45,21 @@
     {% include "partials/opportunities.html" %}
   </div>
 </section>
+
+{% if authed %}
+{# Solo con sesión: el dashboard es público y aquí hay precios reales y contrapartes. #}
+<section class="card">
+  <div class="card-head">
+    <h2>Mis operaciones</h2>
+    <span class="muted small">lo que ejecutaste de verdad · estimado vs. real</span>
+  </div>
+  <div id="trade-form"></div>
+  <div id="trades"
+       hx-get="/partials/trades"
+       hx-trigger="load"
+       hx-swap="innerHTML"></div>
+</section>
+{% endif %}
 
 <section class="card">
   <div class="card-head">

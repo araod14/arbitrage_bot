@@ -146,3 +146,17 @@ class TradeSizing:
     min_required_usdt: Decimal
     min_required_fiat_buy: Decimal  # fiat mínimo a mover en la compra
     feasible: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RealizedPnl:
+    """Resultado REAL de una operación ya ejecutada a mano.
+
+    A diferencia de ``Opportunity``, que guarda lo que el bot estimó al detectar,
+    esto sale de lo que de verdad salió y entró en el banco. Comparar ambos es lo
+    que dice si el arbitraje renta o si el spread se evapora antes de cerrar.
+    """
+
+    profit_fiat: Decimal  # fiat recibido al vender menos fiat pagado al comprar
+    profit_usdt: Decimal  # esa ganancia expresada en USDT al precio real de compra
+    net_pct: Decimal      # % real sobre lo invertido

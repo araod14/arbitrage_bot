@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, db_reader, env_store
+from . import auth, db_reader, env_store, trade_store
 from .bot_manager import BotManager
 
 _HERE = Path(__file__).resolve().parent
@@ -32,6 +32,8 @@ def _paths() -> dict:
         "log_path": os.getenv("LOG_PATH", "p2p_arb_bot.log") or "p2p_arb_bot.log",
         "status_path": os.getenv("STATUS_PATH", "status.json") or "status.json",
         "env_path": os.getenv("ENV_PATH", ".env") or ".env",
+        # Fichero propio del dashboard (el bot no lo conoce): ver trade_store.
+        "trades_db_path": os.getenv("TRADES_DB_PATH", "trades.db") or "trades.db",
     }
 
 
@@ -121,6 +123,8 @@ def create_app() -> FastAPI:
         p = _paths()
         ctx = {
             "request": request,
+            # Sin esto los botones de registro desaparecerían al primer repintado.
+            "authed": auth.is_authed(request),
             "opportunities": db_reader.recent_opportunities(p["db_path"], limit=50),
         }
         return _TEMPLATES.TemplateResponse(request, "partials/opportunities.html", ctx)
@@ -224,9 +228,133 @@ def create_app() -> FastAPI:
             "partials/opportunities.html",
             {
                 "request": request,
+                "authed": True,
                 "opportunities": db_reader.recent_opportunities(p["db_path"], limit=50),
             },
         )
+
+    # --- registro de operaciones (login) --------------------------------
+    #
+    # Todo va detrás de login, incluida la LECTURA: el dashboard corre en un
+    # dominio público con la supervisión abierta, y aquí hay precios reales,
+    # contrapartes y notas del usuario.
+
+    def _as_float(value: str) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _opp_snapshot(opp_id: int) -> dict:
+        """Oportunidad con la que se prellena el formulario.
+
+        Solo se usa al ABRIR el formulario; el POST recibe el snapshot ya
+        resuelto en campos ocultos. Devuelve {} si no está (p. ej. si el usuario
+        pulsó Limpiar entre medias): el formulario sale vacío, no revienta.
+        """
+        p = _paths()
+        for o in db_reader.recent_opportunities(p["db_path"], limit=50):
+            if o.get("id") == opp_id:
+                return o
+        return {}
+
+    def _trades_ctx(request: Request) -> dict:
+        p = _paths()
+        return {
+            "request": request,
+            "authed": True,
+            "trades": trade_store.recent_trades(p["trades_db_path"], limit=50),
+            "summary": trade_store.summary(p["trades_db_path"]),
+        }
+
+    @app.get("/partials/trades", response_class=HTMLResponse)
+    def partial_trades(
+        request: Request, _: None = Depends(auth.require_login)
+    ) -> HTMLResponse:
+        return _TEMPLATES.TemplateResponse(request, "partials/trades.html", _trades_ctx(request))
+
+    @app.get("/trades/new", response_class=HTMLResponse)
+    def trade_new(
+        request: Request, opp_id: int, _: None = Depends(auth.require_login)
+    ) -> HTMLResponse:
+        o = _opp_snapshot(opp_id)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "partials/trade_form.html",
+            {"request": request, "opp": o, "opp_id": opp_id},
+        )
+
+    @app.get("/trades/fail", response_class=HTMLResponse)
+    def trade_fail(
+        request: Request, opp_id: int, _: None = Depends(auth.require_login)
+    ) -> HTMLResponse:
+        o = _opp_snapshot(opp_id)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "partials/trade_fail_form.html",
+            {
+                "request": request,
+                "opp": o,
+                "opp_id": opp_id,
+                "reasons": trade_store.FAILURE_REASONS,
+            },
+        )
+
+    @app.post("/trades", response_class=HTMLResponse)
+    def trade_save(
+        request: Request,
+        status: str = Form(...),
+        opportunity_id: int = Form(...),
+        # El snapshot viaja en el formulario (ver _opp_snapshot_fields.html): no se
+        # relee la DB del bot aquí, porque una lectura bloqueada guardaría la
+        # operación sin estimado y sin comparación posible.
+        detected_at: str = Form(""),
+        asset: str = Form(""),
+        fiat: str = Form(""),
+        est_net_pct: str = Form(""),
+        est_profit_usdt: str = Form(""),
+        real_buy_price: str = Form(""),
+        real_sell_price: str = Form(""),
+        real_usdt: str = Form(""),
+        real_fiat_buy: str = Form(""),
+        real_fiat_sell: str = Form(""),
+        buy_advertiser: str = Form(""),
+        sell_advertiser: str = Form(""),
+        buy_pay_method: str = Form(""),
+        sell_pay_method: str = Form(""),
+        failure_reason: str = Form(""),
+        notes: str = Form(""),
+        _: None = Depends(auth.require_login),
+    ) -> HTMLResponse:
+        p = _paths()
+        trade_store.save_trade(
+            p["trades_db_path"],
+            {
+                "status": (
+                    trade_store.STATUS_FAILED
+                    if status == trade_store.STATUS_FAILED
+                    else trade_store.STATUS_COMPLETED
+                ),
+                "opportunity_id": opportunity_id,
+                "detected_at": detected_at or None,
+                "asset": asset or None,
+                "fiat": fiat or None,
+                "est_net_pct": _as_float(est_net_pct),
+                "est_profit_usdt": est_profit_usdt or None,
+                "real_buy_price": real_buy_price,
+                "real_sell_price": real_sell_price,
+                "real_usdt": real_usdt,
+                "real_fiat_buy": real_fiat_buy,
+                "real_fiat_sell": real_fiat_sell,
+                "buy_advertiser": buy_advertiser or None,
+                "sell_advertiser": sell_advertiser or None,
+                "buy_pay_method": buy_pay_method or None,
+                "sell_pay_method": sell_pay_method or None,
+                "failure_reason": failure_reason or None,
+                "notes": notes or None,
+            },
+        )
+        return _TEMPLATES.TemplateResponse(request, "partials/trades.html", _trades_ctx(request))
 
     # --- configuración (login) ------------------------------------------
 

@@ -1,0 +1,11 @@
+{# Snapshot de lo que estimó el bot, viajando con el formulario.
+   Va aquí y no se relee en el POST a propósito: bajo escritura intensa del bot,
+   leer opportunities.db puede fallar con "database is locked" (SQLite bloquea el
+   fichero entero y el bot no usa WAL). Si el POST releyera, una lectura fallida
+   guardaría la operación SIN estimado y se perdería en silencio la comparación,
+   que es justo para lo que existe este registro. Además ahorra una lectura. #}
+<input type="hidden" name="detected_at" value="{{ opp.detected_at or '' }}">
+<input type="hidden" name="asset" value="{{ opp.asset or '' }}">
+<input type="hidden" name="fiat" value="{{ opp.fiat or '' }}">
+<input type="hidden" name="est_net_pct" value="{{ opp.net_pct if opp.net_pct is not none else '' }}">
+<input type="hidden" name="est_profit_usdt" value="{{ opp.est_profit_usdt or '' }}">

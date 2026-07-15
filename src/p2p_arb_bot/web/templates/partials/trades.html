@@ -1,0 +1,90 @@
+{# Historial de operaciones + el resumen que responde "¿esto renta?". #}
+<div class="status-grid">
+  <div class="card kpi">
+    <span class="kpi-label">Registradas</span>
+    <span class="kpi-value">{{ summary.total }}</span>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-label">Cerradas</span>
+    <span class="kpi-value">{{ summary.completed }}
+      {% if summary.hit_rate is not none %}
+      <span class="muted small">({{ '%.0f'|format(summary.hit_rate) }}%)</span>
+      {% endif %}
+    </span>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-label">Profit real</span>
+    <span class="kpi-value {{ 'pos' if summary.profit_usdt > 0 else ('neg' if summary.profit_usdt < 0 else '') }}">
+      {{ '%.2f'|format(summary.profit_usdt) }} <span class="muted small">USDT</span>
+    </span>
+  </div>
+  <div class="card kpi">
+    <span class="kpi-label">Real vs. estimado</span>
+    {% if summary.avg_net_pct_delta is not none %}
+    <span class="kpi-value {{ 'pos' if summary.avg_net_pct_delta >= 0 else 'neg' }}">
+      {{ '%+.3f'|format(summary.avg_net_pct_delta) }}%
+    </span>
+    {% else %}
+    <span class="kpi-value muted">—</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if trades %}
+<div class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Estado</th>
+        <th>Par</th>
+        <th class="num">Neto real</th>
+        <th class="num">Est.</th>
+        <th class="num">Δ</th>
+        <th class="num">Profit</th>
+        <th>Contrapartes</th>
+        <th>Notas</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in trades %}
+      <tr>
+        <td>
+          {% if t.status == 'completed' %}
+          <span class="badge on">cerrada</span>
+          {% else %}
+          <span class="badge off">no pude</span>
+          <div class="muted small">{{ t.failure_label }}</div>
+          {% endif %}
+        </td>
+        <td>{{ t.asset }}/{{ t.fiat }}<div class="muted small">{{ t.detected_local or '' }}</div></td>
+        <td class="num">
+          {% if t.status == 'completed' %}
+          <span class="{{ 'pos' if t.net_pct >= 0 else 'neg' }}">{{ '%.3f'|format(t.net_pct) }}%</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="num muted">
+          {% if t.est_net_pct is not none %}{{ '%.3f'|format(t.est_net_pct) }}%{% else %}—{% endif %}
+        </td>
+        <td class="num">
+          {% if t.net_pct_delta is not none %}
+          <span class="{{ 'pos' if t.net_pct_delta >= 0 else 'neg' }}">{{ '%+.3f'|format(t.net_pct_delta) }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="num">
+          {% if t.status == 'completed' %}~{{ '%.2f'|format(t.profit_usdt) }}{% else %}—{% endif %}
+        </td>
+        <td class="small muted">
+          {% if t.buy_advertiser or t.sell_advertiser %}
+          {{ t.buy_advertiser or '?' }} → {{ t.sell_advertiser or '?' }}
+          <div>{{ t.buy_pay_method or '' }}{% if t.sell_pay_method and t.sell_pay_method != t.buy_pay_method %} / {{ t.sell_pay_method }}{% endif %}</div>
+          {% else %}—{% endif %}
+        </td>
+        <td class="small muted">{{ t.notes or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="muted empty">Aún no has registrado ninguna operación.</p>
+{% endif %}

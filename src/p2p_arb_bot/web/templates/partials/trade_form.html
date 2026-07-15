@@ -1,0 +1,66 @@
+{# Registro de una operación cerrada. Los montos fiat son la fuente de verdad del
+   cálculo (reflejan comisiones y redondeos); los precios se guardan de referencia. #}
+{# Al guardar, la respuesta repinta #trades y el formulario se cierra solo. #}
+<form class="form trade-form" hx-post="/trades" hx-target="#trades" hx-swap="innerHTML"
+      hx-on::after-request="if(event.detail.successful) document.getElementById('trade-form').innerHTML=''">
+  <input type="hidden" name="status" value="completed">
+  <input type="hidden" name="opportunity_id" value="{{ opp_id }}">
+  {% include "partials/_opp_snapshot_fields.html" %}
+
+  <div class="card-head">
+    <h3>Registrar operación
+      {% if opp %}<span class="muted small">{{ opp.asset }}/{{ opp.fiat }} · detectada {{ opp.detected_local }} · est. {{ '%.3f'|format(opp.net_pct) }}%</span>{% endif %}
+    </h3>
+  </div>
+
+  <div class="field-grid">
+    <label>Precio real de compra
+      <input type="text" name="real_buy_price" inputmode="decimal"
+             value="{{ opp.buy_price if opp else '' }}">
+    </label>
+    <label>Precio real de venta
+      <input type="text" name="real_sell_price" inputmode="decimal"
+             value="{{ opp.sell_price if opp else '' }}">
+    </label>
+    <label>USDT movidos
+      <input type="text" name="real_usdt" inputmode="decimal"
+             value="{{ '%.2f'|format(opp.usable_usdt) if opp and opp.feasible else '' }}">
+    </label>
+    <label>{{ opp.fiat if opp else 'Fiat' }} pagados al comprar
+      <input type="text" name="real_fiat_buy" inputmode="decimal" required
+             value="{{ '%.2f'|format(opp.usable_fiat_buy) if opp and opp.feasible else '' }}">
+    </label>
+    <label>{{ opp.fiat if opp else 'Fiat' }} recibidos al vender
+      <input type="text" name="real_fiat_sell" inputmode="decimal" required
+             value="{{ '%.2f'|format(opp.usable_fiat_sell) if opp and opp.feasible else '' }}">
+    </label>
+  </div>
+
+  <p class="muted small">Los prellenados vienen de la estimación del bot: corrígelos con lo que
+    realmente pasó, que es justo lo que da valor a la comparación.</p>
+
+  <div class="field-grid">
+    <label>Vendedor (le compraste)
+      <input type="text" name="buy_advertiser" value="{{ opp.buy_advertiser if opp else '' }}">
+    </label>
+    <label>Comprador (le vendiste)
+      <input type="text" name="sell_advertiser" value="{{ opp.sell_advertiser if opp else '' }}">
+    </label>
+    <label>Método de compra
+      <input type="text" name="buy_pay_method" value="{{ opp.buy_pay_method if opp else '' }}">
+    </label>
+    <label>Método de venta
+      <input type="text" name="sell_pay_method" value="{{ opp.sell_pay_method if opp else '' }}">
+    </label>
+  </div>
+
+  <label>Notas
+    <textarea name="notes" rows="2" placeholder="Incidencias, apelaciones, lo que sea"></textarea>
+  </label>
+
+  <div class="btn-row">
+    <button class="btn primary" type="submit">Guardar operación</button>
+    <button class="btn" type="button"
+            hx-on:click="document.getElementById('trade-form').innerHTML=''">Cancelar</button>
+  </div>
+</form>

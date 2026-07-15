@@ -97,7 +97,7 @@ def _connect_ro(db_path: str) -> sqlite3.Connection | None:
 # que el bot arranque con el esquema nuevo, las opcionales pueden no existir: se
 # seleccionan solo las presentes y ``_add_sizing`` degrada al fondo si faltan.
 _BASE_COLS = (
-    "detected_at, asset, fiat, buy_pay_method, sell_pay_method, "
+    "id, detected_at, asset, fiat, buy_pay_method, sell_pay_method, "
     "buy_price, sell_price, spread_pct, net_pct, max_usdt, "
     "buy_advertiser, sell_advertiser, buy_url, sell_url, est_profit_usdt"
 )
@@ -122,8 +122,11 @@ def recent_opportunities(db_path: str, limit: int = 50) -> list[dict]:
         available = _existing_columns(conn)
         extra = [c for c in _SIZING_COLS if c in available]
         cols = _BASE_COLS + ("".join(f", {c}" for c in extra))
+        # Desempate por id: dos filas con el mismo detected_at tendrían orden
+        # indefinido, y el aviso del navegador se apoya en que el id mayor sea el
+        # más reciente.
         cur = conn.execute(
-            f"SELECT {cols} FROM opportunities ORDER BY detected_at DESC LIMIT ?",
+            f"SELECT {cols} FROM opportunities ORDER BY detected_at DESC, id DESC LIMIT ?",
             (limit,),
         )
         rows = [dict(row) for row in cur.fetchall()]

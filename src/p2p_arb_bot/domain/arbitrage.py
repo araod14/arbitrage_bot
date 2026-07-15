@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterable
 
-from .models import Ad, Opportunity, TradeSizing, WatchTarget, book_url
+from .models import Ad, Opportunity, RealizedPnl, TradeSizing, WatchTarget, book_url
 
 # Etiqueta interna para el caso "sin filtrar por método" (target sin métodos).
 _ALL = "ALL"
@@ -67,6 +67,32 @@ def suggested_trade(
         min_required_usdt=min_required_usdt,
         min_required_fiat_buy=min_required_usdt * buy_price,
         feasible=feasible,
+    )
+
+
+def realized_pnl(fiat_in: Decimal, fiat_out: Decimal, usdt: Decimal) -> RealizedPnl:
+    """Ganancia REAL de una operación cerrada, a partir de lo que movió el banco.
+
+    Se calcula sobre los montos fiat efectivos (``fiat_in`` pagado al comprar,
+    ``fiat_out`` recibido al vender) y no sobre los precios: así las comisiones y
+    los redondeos que se comieron parte del spread quedan reflejados, que es
+    justo lo que interesa medir contra la estimación del bot.
+
+    ``fiat_in <= 0`` (dato ausente o erróneo) devuelve ceros en vez de dividir por
+    cero: no se puede calcular un % sobre una inversión desconocida. Función pura.
+    """
+    if fiat_in <= 0:
+        return RealizedPnl(
+            profit_fiat=Decimal("0"), profit_usdt=Decimal("0"), net_pct=Decimal("0")
+        )
+
+    profit_fiat = fiat_out - fiat_in
+    return RealizedPnl(
+        profit_fiat=profit_fiat,
+        # usdt/fiat_in es el precio de compra realmente pagado; convierte la
+        # ganancia fiat a USDT sin depender del precio nominal del anuncio.
+        profit_usdt=profit_fiat * usdt / fiat_in if usdt > 0 else Decimal("0"),
+        net_pct=profit_fiat / fiat_in * Decimal("100"),
     )
 
 

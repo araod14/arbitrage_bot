@@ -8,3 +8,6 @@ python-multipart>=0.0.9
 itsdangerous>=2.1
 Pillow>=10.1
 pytest>=8.0
+# Requerido por starlette.testclient (tests de endpoints). Starlette 1.3 pide
+# httpx2; con el httpx clásico funciona pero emite StarletteDeprecationWarning.
+httpx2>=2.0

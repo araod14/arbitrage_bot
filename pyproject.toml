@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx2>=2.0"]
 
 [project.scripts]
 p2p-arb-bot = "p2p_arb_bot.main:cli"

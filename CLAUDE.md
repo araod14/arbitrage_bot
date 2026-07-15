@@ -24,10 +24,17 @@ make dashboard    # dashboard web local en http://localhost:8000
 make docker-up    # despliega el dashboard en Docker (bot como subproceso)
 make help         # lista todos los objetivos
 pytest tests/test_arbitrage.py   # un solo archivo de tests
+pytest -k "outlier"              # un solo test por nombre
 ```
 
 Setup inicial: `python -m venv venv && source venv/bin/activate && make install`.
 Requiere Python 3.11+. Sin `pip install -e .`, usa `PYTHONPATH=src`.
+
+**No hay linter ni formateador configurados** (`make lint` está en `.PHONY` pero no
+existe el objetivo: fallaría). No añadas ruff/black/mypy sin pedirlo antes.
+
+`pip install -e .` registra además dos comandos: `p2p-arb-bot` (el bot) y
+`p2p-arb-dashboard` (el dashboard), equivalentes a los `python -m ...`.
 
 ## Arquitectura (clean architecture, dependencias hacia el dominio)
 
@@ -52,6 +59,7 @@ src/p2p_arb_bot/
     ├── app.py       # create_app(): rutas, sesiones, plantillas
     ├── bot_manager.py # arranca/para el bot como SUBPROCESO vía pidfile
     ├── db_reader.py # lectura solo-lectura de DB/status.json/log
+    ├── trade_store.py # registro de operaciones REALES del usuario (DB propia)
     ├── env_store.py # lee/escribe el .env desde el form de config
     └── auth.py      # login por contraseña + cookie de sesión firmada
 ```
@@ -111,6 +119,20 @@ por el dashboard corre siempre con `NO_INPUT=true`.
   (`DASHBOARD_PASSWORD` + cookie firmada con `DASHBOARD_SECRET`).
 - Editar la config desde el dashboard reescribe el `.env` (`env_store`) preservando
   el resto de claves, y reinicia el bot si está corriendo.
+- **Supervisión pública, registro de operaciones privado.** Las oportunidades y el
+  log son visibles sin login; todo lo de `trades` (incluida la LECTURA) exige sesión,
+  porque lleva precios reales, contrapartes y notas. Ojo: si el dashboard se expone a
+  un dominio público, `/partials/log` y `/partials/status` quedan abiertos a Internet.
+- HTMX está **vendorizado** en `web/static/htmx.min.js`, no viene de un CDN.
+- **JS propio: solo `web/static/notify.js`** (avisos del navegador). El resto del
+  front es HTMX más algún `hx-on` inline. Las notificaciones exigen **contexto
+  seguro** (HTTPS o localhost): por IP de LAN el navegador bloquea la API y el botón
+  se deshabilita solo. El "ya visto" vive en `localStorage`, no en el servidor.
+- Los assets no-Python (`web/templates/**`, `web/static/*`,
+  `infrastructure/fonts/*.ttf`) se enumeran a mano en `[tool.setuptools.package-data]`
+  de `pyproject.toml`. Si creas otra subcarpeta de plantillas o añades una fuente,
+  agrégala ahí o no se instalará con el paquete (funcionará en editable y fallará
+  en Docker).
 
 ## Configuración
 
@@ -120,7 +142,15 @@ como predeterminados; en modo interactivo cada prompt los ofrece como default.
 `PAY_METHODS`, `MAX_USDT`, `THRESHOLD_PCT`, `FEE_BUFFER_PCT`, `OUTLIER_MAX_DEV_PCT`,
 `MERCHANT_CHECK`, `POLL_INTERVAL_S`, `DB_PATH`, `LOG_PATH`, `STATUS_PATH`,
 `SCREENSHOTS_DIR`, `SCREENSHOTS`, `IMPERSONATE`, `PROXY`, `BEEP`, `NO_INPUT`,
-`DASHBOARD_*`, `ENV_PATH`, `BOT_PIDFILE`.
+`ROWS`, `DASHBOARD_*`, `ENV_PATH`, `BOT_PIDFILE`, `TRADES_DB_PATH`.
+
+`TRADES_DB_PATH` es solo del dashboard: se lee en `web/app.py` (`_paths()`), **no**
+en `Defaults.from_env()`, porque el bot no conoce ese fichero.
+
+Al añadir una clave nueva: documéntala en `.env.example` **y** léela en
+`Defaults.from_env()`. Ojo, `ROWS` y `BOT_PIDFILE` sí se leen (`config.py`,
+`web/app.py`) pero faltan en `.env.example`; no tomes ese archivo como la lista
+completa.
 
 ## Base de datos
 
@@ -128,12 +158,46 @@ Tabla `opportunities` en SQLite (`DB_PATH`). Migración automática al arrancar
 (añade columnas faltantes). Se suprimen duplicados idénticos (mismos `advNo` +
 precios) dentro de una ventana de 60 s (`dedup_key` / `recent_duplicate`).
 
+**Son DOS ficheros SQLite, y la separación es deliberada.** `DB_PATH` la escribe el
+bot; `TRADES_DB_PATH` (tabla `trades`, `web/trade_store.py`) la escribe el dashboard
+con las operaciones que el usuario ejecutó a mano. No se pueden fusionar: SQLite
+bloquea **el fichero entero, no la tabla**, y el bot no activa WAL, así que dos
+procesos escribiendo el mismo fichero se pelean por el lock. Con ficheros separados
+cada proceso escribe el suyo (verificado: 2000 escrituras del bot en paralelo, cero
+`database is locked`).
+
+Consecuencia a tener presente: **leer `DB_PATH` bajo escritura intensa del bot sí
+puede fallar** con `database is locked` (un lector bloquea al escritor y viceversa
+en modo rollback journal). `db_reader` lo traga y degrada a lista vacía. Por eso el
+formulario de registro **lleva el snapshot de lo estimado en campos ocultos** en vez
+de releer la DB en el POST: una lectura bloqueada guardaría la operación sin
+estimado y destruiría en silencio la comparación estimado-vs-real.
+
+Cada fila de `trades` **copia** lo que estimó el bot (`est_net_pct`, `detected_at`…)
+en vez de referenciar `opportunity_id`, porque el botón Limpiar hace
+`DELETE FROM opportunities` y dejaría el registro sin base de comparación.
+
 ## Tests
 
 `pytest`. Cubren dominio (spread, límites, pares cruzados, outliers), caso de uso
-(persistencia, supresión de duplicados, heartbeats, múltiples adaptadores) y web,
-usando **fakes — sin red ni disco**. Al añadir lógica al dominio o a `MonitorService`,
-escribe el test con un fake que cumpla el Protocol correspondiente; no hagas red real.
+(persistencia, supresión de duplicados, heartbeats, múltiples adaptadores) y web.
+Al añadir lógica al dominio o a `MonitorService`, escribe el test con un fake que
+cumpla el Protocol correspondiente; **no hagas red real**.
+
+Hay tres estilos y cada uno cubre cosas distintas — usa el que toque:
+
+- `test_arbitrage.py`, `test_monitor.py`: **fakes, sin red ni disco**. Dominio y caso
+  de uso.
+- `test_web.py`, `test_trade_store.py`: funciones puras de soporte con **SQLite real
+  sobre `tmp_path`**.
+- `test_web_endpoints.py`: la app montada con **`TestClient`** (requiere `httpx2`;
+  Starlette 1.3 lo prefiere sobre el `httpx` clásico, que emite deprecation). Cubre
+  lo que los otros dos no pueden ver: plantillas que revientan, rutas sin proteger y
+  contexto que no llega al parcial. **Si tocas `web/app.py` o una plantilla, el test
+  va aquí** — un fallo de render solo aparece pidiendo la ruta.
+  Ojo: `create_app()` llama a `load_dotenv`, así que **hay que fijar `ENV_PATH`** a un
+  archivo vacío o los tests cargarían el `.env` real del repo. No toques `/bot/start`
+  desde un test: lanza un subproceso de verdad.
 
 ## Docker
 

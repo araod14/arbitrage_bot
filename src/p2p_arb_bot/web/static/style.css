@@ -72,6 +72,9 @@ body {
 }
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.on { color: var(--pos); border-color: var(--pos); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:disabled:hover { border-color: var(--border); }
 
 /* monto a usar */
 .trade-legs { display: flex; align-items: stretch; gap: 1rem; flex-wrap: wrap; }
@@ -114,6 +117,27 @@ fieldset { border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1
 legend { padding: 0 .4rem; color: var(--muted); font-size: .85rem; }
 .methods { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .4rem; }
 .check { flex-direction: row !important; align-items: center; gap: .4rem; }
+
+/* registro de operaciones */
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+.trade-form { border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-top: 0; }
+.trade-form .card-head { margin-bottom: 0; }
+.trade-form h3 { margin: 0; font-size: .95rem; }
+.form select, .form textarea {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: .55rem .7rem; font-size: .95rem; font-family: inherit;
+}
+.row-actions { display: flex; gap: .4rem; white-space: nowrap; }
+.btn.tiny { padding: .2rem .5rem; font-size: .75rem; }
+/* La tabla de oportunidades no cabe en pantallas estrechas y hace scroll
+   horizontal; sin esto los botones de registro —la acción principal— quedarían
+   fuera de vista. El fondo debe ser opaco para que las columnas no se vean por
+   debajo al desplazar, y seguir al hover de la fila. */
+.data .col-actions {
+  position: sticky; right: 0; background: var(--panel);
+  border-left: 1px solid var(--border);
+}
+.data tbody tr:hover .col-actions { background: var(--panel-2); }
 
 .alert { padding: .6rem .8rem; border-radius: 8px; font-size: .88rem; }
 .alert.ok { background: rgba(63,185,80,.12); border: 1px solid var(--pos); color: var(--pos); }
