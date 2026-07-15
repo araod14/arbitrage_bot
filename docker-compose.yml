@@ -21,6 +21,11 @@ services:
       STATUS_PATH: "/data/status.json"
       SCREENSHOTS_DIR: "/data/screenshots"
       BOT_PIDFILE: "/data/bot.pid"
+      # Registro de operaciones del usuario. Fichero aparte del de DB_PATH a
+      # propósito (SQLite bloquea el fichero entero: ver web/trade_store.py), y
+      # al volumen sí o sí: es lo ÚNICO que el usuario escribe a mano y no se
+      # puede regenerar. En /app se perdería en cada recreación del contenedor.
+      TRADES_DB_PATH: "/data/trades.db"
       # El dashboard edita este .env al guardar config; el bind-mount de abajo
       # lo deja en el mismo fichero que lee env_file.
       ENV_PATH: "/app/.env"
