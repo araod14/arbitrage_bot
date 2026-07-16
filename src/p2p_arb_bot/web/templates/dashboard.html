@@ -1,4 +1,12 @@
 {% extends "base.html" %}
+
+{# El toggle de avisos vive en la barra superior (siempre visible, sin scroll):
+   en la tarjeta de oportunidades quedaba abajo del todo y pasaba desapercibido.
+   notify.js lo activa al cargar si el contexto es seguro. #}
+{% block topbar_extra %}
+<button class="navlink notify-btn" type="button" id="notify-toggle" disabled>🔔 Activar avisos</button>
+{% endblock %}
+
 {% block content %}
 
 <section id="status-panel"
@@ -27,7 +35,6 @@
     <h2>Oportunidades recientes</h2>
     <div class="card-head-actions">
       <span class="muted small">se actualiza cada 8 s</span>
-      <button class="btn" type="button" id="notify-toggle" disabled>Activar avisos</button>
       {% if authed %}
       <button class="btn"
               hx-post="/opportunities/clear"

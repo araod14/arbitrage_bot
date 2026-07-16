@@ -12,6 +12,7 @@
   <header class="topbar">
     <a href="/" class="brand">⚡ P2P Arb <span class="muted">Dashboard</span></a>
     <nav>
+      {% block topbar_extra %}{% endblock %}
       {% if authed %}
         <a href="/config" class="navlink">Configurar</a>
         <form action="/logout" method="post" class="inline">

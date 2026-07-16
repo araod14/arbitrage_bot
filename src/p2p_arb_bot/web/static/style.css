@@ -42,6 +42,13 @@ body {
 .navlink:hover { background: var(--panel-2); }
 .navlink.ghost { color: var(--muted); }
 
+/* Toggle de avisos en la barra. Borde visible para que se lea como acción, no
+   como texto; los estados los alterna notify.js. */
+.notify-btn { border-color: var(--border); }
+.notify-btn.on { color: var(--pos); border-color: var(--pos); }
+.notify-btn:disabled { opacity: .5; cursor: not-allowed; }
+.notify-btn:disabled:hover { background: none; }
+
 .container { max-width: 1240px; margin: 0 auto; padding: 1.4rem; }
 .footer { text-align: center; padding: 1.5rem; font-size: .8rem; }
 
