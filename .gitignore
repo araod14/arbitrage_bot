@@ -33,6 +33,12 @@ status.json
 screenshots/
 capturas_oportunidades/
 
+# Ajustes locales de Claude Code (permisos de esta máquina, no del proyecto).
+# El settings.json compartido sí se commitea; el .local y los temporales que
+# deja su escritura atómica, no.
+.claude/settings.local.json
+.claude/*.tmp.*
+
 # Editores / SO
 .idea/
 .vscode/
