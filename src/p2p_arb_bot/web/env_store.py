@@ -8,6 +8,7 @@ se leen reutilizando ``Defaults.from_env`` para no duplicar el parseo/casting.
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 import os
 from decimal import Decimal
@@ -82,10 +83,22 @@ def write_config(
         if key not in seen:
             out.append(f"{key}={value}")
 
+    content = "\n".join(out) + "\n"
     tmp = f"{env_path}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(out) + "\n")
-    os.replace(tmp, env_path)
+        fh.write(content)
+    try:
+        os.replace(tmp, env_path)
+    except OSError as exc:
+        # En Docker el .env suele montarse como bind-mount de un fichero único;
+        # entonces el destino es un punto de montaje y no se puede renombrar
+        # encima (EBUSY), ni mover entre dispositivos distintos (EXDEV). En esos
+        # casos escribimos in-place sobre el inodo ya montado.
+        if exc.errno not in (errno.EBUSY, errno.EXDEV):
+            raise
+        with open(env_path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.unlink(tmp)
 
     # Actualiza el entorno del propio dashboard para que el subproceso del bot
     # (que hereda os.environ) tome los nuevos valores al reiniciar. Necesario en

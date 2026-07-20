@@ -29,8 +29,14 @@ services:
       # El dashboard edita este .env al guardar config; el bind-mount de abajo
       # lo deja en el mismo fichero que lee env_file.
       ENV_PATH: "/app/.env"
+      # Puerto INTERNO del contenedor fijo a 8000 (sobreescribe el valor de
+      # .env). El puerto del host se mapea aparte en `ports` para evitar
+      # conflictos con otras apps del servidor.
+      DASHBOARD_PORT: "8000"
     ports:
-      - "${DASHBOARD_PORT:-8000}:8000"
+      # Publica solo en loopback; el acceso público va por nginx + TLS.
+      # 8003 en el host -> 8000 dentro del contenedor.
+      - "127.0.0.1:8003:8000"
     volumes:
       # Persiste la base de datos SQLite, los logs y el estado entre reinicios.
       - arb-data:/data
