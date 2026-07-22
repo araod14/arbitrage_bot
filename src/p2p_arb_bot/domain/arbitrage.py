@@ -17,11 +17,6 @@ from .models import Ad, Opportunity, RealizedPnl, TradeSizing, WatchTarget, book
 _ALL = "ALL"
 
 
-def amount_in_fiat(max_usdt: Decimal, ref_price: Decimal) -> Decimal:
-    """Convierte un monto en USDT a fiat usando un precio de referencia."""
-    return max_usdt * ref_price
-
-
 def suggested_trade(
     max_usdt: Decimal,
     buy_price: Decimal,
@@ -31,10 +26,14 @@ def suggested_trade(
     sell_min: Decimal,
     sell_max: Decimal,
 ) -> TradeSizing:
-    """Cuánto operar (en USDT y fiat) acotado por el fondo y los límites de anuncio.
+    """Cuánto operar (en unidades del asset y en fiat) acotado por el fondo y los
+    límites de anuncio.
 
-    - Piso: ``max`` de los mínimos de compra/venta, cada uno convertido a USDT con
-      su propio precio (``min_amount`` está en fiat).
+    ``max_usdt`` son las unidades del asset que cubre el fondo a ese precio de
+    compra (lo que guarda ``Opportunity.max_usdt``), no el fondo en fiat.
+
+    - Piso: ``max`` de los mínimos de compra/venta, cada uno convertido a unidades
+      con su propio precio (``min_amount`` está en fiat).
     - Techo: el fondo ``max_usdt``, recortado por los máximos de compra/venta (un
       máximo ``<= 0`` significa "sin dato" y no acota).
     - Si el piso supera al techo, no es factible: ``usable`` queda a 0.
@@ -96,24 +95,29 @@ def realized_pnl(fiat_in: Decimal, fiat_out: Decimal, usdt: Decimal) -> Realized
     )
 
 
-def accepts_amount(ad: Ad, max_usdt: Decimal, ref_price: Decimal) -> bool:
-    """¿El anuncio acepta operar ``max_usdt`` (convertido a fiat)?
+def accepts_amount(ad: Ad, max_fiat: Decimal) -> bool:
+    """¿El anuncio acepta operar el fondo ``max_fiat``?
 
-    Comprueba que el monto en fiat caiga dentro de [min_amount, max_amount] del
-    anuncio (límites inclusive).
+    Los límites del anuncio ya están en fiat, igual que el fondo, así que la
+    comparación es directa contra [min_amount, max_amount] (límites inclusive).
     """
-    amount = amount_in_fiat(max_usdt, ref_price)
-    return ad.min_amount <= amount <= ad.max_amount
+    return ad.min_amount <= max_fiat <= ad.max_amount
 
 
-def has_inventory(ad: Ad, max_usdt: Decimal) -> bool:
-    """¿El anuncio tiene USDT disponible suficiente para operar ``max_usdt``?
+def has_inventory(ad: Ad, max_fiat: Decimal) -> bool:
+    """¿El anuncio tiene inventario para absorber el fondo ``max_fiat``?
 
-    Comprueba ``surplusAmount`` (inventario real del anuncio, en USDT). Muchos
+    Comprueba ``surplusAmount`` (inventario real del anuncio, en unidades del
+    asset) contra las unidades que compraría el fondo a este precio. Muchos
     anuncios "cebo" muestran un precio muy bueno con poquísima disponibilidad: sin
     este filtro serían elegidos como mejor compra/venta aunque no puedas llenarlos.
+
+    Un precio ``<= 0`` (dato ausente/erróneo) descarta el anuncio: no se puede
+    saber cuántas unidades cubre el fondo.
     """
-    return ad.surplus >= max_usdt
+    if ad.price <= 0:
+        return False
+    return ad.surplus >= max_fiat / ad.price
 
 
 def _median_price(ads: list[Ad]) -> Decimal:
@@ -151,33 +155,33 @@ def drop_outliers(ads: list[Ad], max_dev_pct: Decimal) -> list[Ad]:
 def _eligible(
     ads: Iterable[Ad],
     method: str,
-    max_usdt: Decimal,
+    max_fiat: Decimal,
     max_dev_pct: Decimal = Decimal("0"),
 ) -> list[Ad]:
     """Filtra por método de pago, por que acepten el monto, por inventario y outliers.
 
-    Cada anuncio se evalúa contra sus propios límites usando su propio precio
-    como referencia (es el monto fiat que realmente se transaría con él) y contra
-    su disponibilidad real (``surplusAmount``). Tras ese filtro se descartan los
-    precios atípicos respecto a la mediana del libro.
+    Cada anuncio se evalúa contra sus propios límites (en fiat, igual que el
+    fondo) y contra su disponibilidad real (``surplusAmount``, en unidades del
+    asset). Tras ese filtro se descartan los precios atípicos respecto a la
+    mediana del libro.
     """
     out: list[Ad] = []
     for ad in ads:
         if method != _ALL and method not in ad.pay_methods:
             continue
-        if accepts_amount(ad, max_usdt, ad.price) and has_inventory(ad, max_usdt):
+        if accepts_amount(ad, max_fiat) and has_inventory(ad, max_fiat):
             out.append(ad)
     return drop_outliers(out, max_dev_pct)
 
 
 def best_buy(
     ads: Iterable[Ad],
-    max_usdt: Decimal,
+    max_fiat: Decimal,
     method: str = _ALL,
     max_dev_pct: Decimal = Decimal("0"),
 ) -> Ad | None:
-    """Mejor anuncio para COMPRAR USDT: el de precio más bajo que acepte el monto."""
-    eligible = _eligible(ads, method, max_usdt, max_dev_pct)
+    """Mejor anuncio para COMPRAR el asset: el de precio más bajo que acepte el monto."""
+    eligible = _eligible(ads, method, max_fiat, max_dev_pct)
     if not eligible:
         return None
     return min(eligible, key=lambda a: a.price)
@@ -185,12 +189,12 @@ def best_buy(
 
 def best_sell(
     ads: Iterable[Ad],
-    max_usdt: Decimal,
+    max_fiat: Decimal,
     method: str = _ALL,
     max_dev_pct: Decimal = Decimal("0"),
 ) -> Ad | None:
-    """Mejor anuncio para VENDER USDT: el de precio más alto que acepte el monto."""
-    eligible = _eligible(ads, method, max_usdt, max_dev_pct)
+    """Mejor anuncio para VENDER el asset: el de precio más alto que acepte el monto."""
+    eligible = _eligible(ads, method, max_fiat, max_dev_pct)
     if not eligible:
         return None
     return max(eligible, key=lambda a: a.price)
@@ -222,11 +226,11 @@ def best_spread(
     dev = target.outlier_max_dev_pct
     best: Decimal | None = None
     for bm in methods:
-        bb = best_buy(buy_ads, target.max_usdt, bm, dev)
+        bb = best_buy(buy_ads, target.max_fiat, bm, dev)
         if bb is None:
             continue
         for sm in methods:
-            ss = best_sell(sell_ads, target.max_usdt, sm, dev)
+            ss = best_sell(sell_ads, target.max_fiat, sm, dev)
             if ss is None:
                 continue
             net = compute_spread(bb.price, ss.price) - target.fee_buffer_pct
@@ -259,11 +263,11 @@ def find_best_opportunity(
     best_net: Decimal | None = None
 
     for bm in methods:
-        bb = best_buy(buy_ads, target.max_usdt, bm, dev)
+        bb = best_buy(buy_ads, target.max_fiat, bm, dev)
         if bb is None:
             continue
         for sm in methods:
-            ss = best_sell(sell_ads, target.max_usdt, sm, dev)
+            ss = best_sell(sell_ads, target.max_fiat, sm, dev)
             if ss is None:
                 continue
             net = compute_spread(bb.price, ss.price) - target.fee_buffer_pct
@@ -278,10 +282,14 @@ def find_best_opportunity(
         return None
 
     spread = compute_spread(best_buy_ad.price, best_sell_ad.price)
-    est_profit = (best_sell_ad.price - best_buy_ad.price) * target.max_usdt
-    # Ganancia neta estimada en USDT: lo que ganarías sobre el monto operado,
-    # después del buffer de fees (net_pct ya lo descuenta).
-    est_profit_usdt = target.max_usdt * best_net / Decimal("100")
+    # Unidades del asset que compra el fondo a este precio: es lo que hace que un
+    # mismo MAX_FIAT sirva para USDT y para BTC. best_buy_ad.price > 0 lo garantiza
+    # has_inventory, que descarta los precios no positivos.
+    units = target.max_fiat / best_buy_ad.price
+    est_profit = (best_sell_ad.price - best_buy_ad.price) * units
+    # Ganancia neta estimada en unidades del asset: lo que ganarías sobre el monto
+    # operado, después del buffer de fees (net_pct ya lo descuenta).
+    est_profit_usdt = units * best_net / Decimal("100")
 
     return Opportunity(
         detected_at=now,
@@ -293,7 +301,7 @@ def find_best_opportunity(
         sell_price=best_sell_ad.price,
         spread_pct=spread,
         net_pct=best_net,
-        max_usdt=target.max_usdt,
+        max_usdt=units,
         buy_adv_no=best_buy_ad.adv_no,
         sell_adv_no=best_sell_ad.adv_no,
         buy_advertiser=best_buy_ad.advertiser_name,

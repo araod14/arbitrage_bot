@@ -117,7 +117,7 @@ def test_summary_mixes_completed_and_failed(tmp_path):
     assert s["failed"] == 1
     assert round(s["hit_rate"], 1) == 66.7
     # +100 VES y -100 VES sobre 3600 invertidos: se compensan.
-    assert round(s["profit_usdt"], 6) == 0.0
+    assert round(s["profit_fiat"], 6) == 0.0
 
 
 def test_summary_empty(tmp_path):
@@ -127,7 +127,8 @@ def test_summary_empty(tmp_path):
         "completed": 0,
         "failed": 0,
         "hit_rate": None,
-        "profit_usdt": 0,
+        "profit_fiat": 0,
+        "fiat": "",
         "avg_net_pct": None,
         "avg_net_pct_delta": None,
     }

@@ -54,7 +54,7 @@ def target(**kw) -> WatchTarget:
         asset="USDT",
         fiat="VES",
         pay_methods=(),
-        max_usdt=D("100"),
+        max_fiat=D("80000"),   # equivale a 100 USDT a 800 VES
         threshold_pct=D("1.0"),
         fee_buffer_pct=D("0"),
     )
@@ -84,7 +84,7 @@ def test_best_buy_picks_lowest_price():
         make_ad(adv_no="b", price="795", trade_type="BUY"),
         make_ad(adv_no="c", price="810", trade_type="BUY"),
     ]
-    assert best_buy(ads, D("100")).adv_no == "b"
+    assert best_buy(ads, D("80000")).adv_no == "b"
 
 
 def test_best_sell_picks_highest_price():
@@ -93,11 +93,11 @@ def test_best_sell_picks_highest_price():
         make_ad(adv_no="b", price="820", trade_type="SELL"),
         make_ad(adv_no="c", price="810", trade_type="SELL"),
     ]
-    assert best_sell(ads, D("100")).adv_no == "b"
+    assert best_sell(ads, D("80000")).adv_no == "b"
 
 
 def test_best_buy_returns_none_when_empty():
-    assert best_buy([], D("100")) is None
+    assert best_buy([], D("80000")) is None
 
 
 # --- accepts_amount / filtrado por límites -----------------------------------
@@ -105,34 +105,42 @@ def test_best_buy_returns_none_when_empty():
 def test_accepts_amount_within_limits():
     ad = make_ad(adv_no="a", price="800", trade_type="BUY",
                  min_amount="10000", max_amount="100000")
-    # 100 USDT * 800 = 80_000 VES, dentro de [10_000, 100_000]
-    assert accepts_amount(ad, D("100"), D("800")) is True
+    # El fondo ya está en fiat: 80_000 VES cae dentro de [10_000, 100_000]
+    assert accepts_amount(ad, D("80000")) is True
 
 
 def test_accepts_amount_below_min_rejected():
     ad = make_ad(adv_no="a", price="800", trade_type="BUY",
                  min_amount="200000", max_amount="500000")
     # 80_000 < 200_000 -> rechazado
-    assert accepts_amount(ad, D("100"), D("800")) is False
+    assert accepts_amount(ad, D("80000")) is False
 
 
 def test_accepts_amount_above_max_rejected():
     ad = make_ad(adv_no="a", price="800", trade_type="BUY",
                  min_amount="0", max_amount="50000")
     # 80_000 > 50_000 -> rechazado
-    assert accepts_amount(ad, D("100"), D("800")) is False
+    assert accepts_amount(ad, D("80000")) is False
 
 
 def test_accepts_amount_boundaries_inclusive():
     ad = make_ad(adv_no="a", price="800", trade_type="BUY",
                  min_amount="80000", max_amount="80000")
-    assert accepts_amount(ad, D("100"), D("800")) is True
+    assert accepts_amount(ad, D("80000")) is True
 
 
-def test_has_inventory_requires_surplus_ge_max_usdt():
+def test_has_inventory_compares_unidades_no_fiat():
+    # surplus está en unidades del asset; el fondo, en fiat. 800.000 VES a 800
+    # son justo las 1.000 unidades del inventario.
     ad = make_ad(adv_no="a", price="800", trade_type="BUY", surplus="1000")
-    assert has_inventory(ad, D("1000")) is True   # justo el límite (inclusive)
-    assert has_inventory(ad, D("1001")) is False  # no alcanza el inventario
+    assert has_inventory(ad, D("800000")) is True   # límite inclusive
+    assert has_inventory(ad, D("800800")) is False  # 1001 unidades, no alcanza
+
+
+def test_has_inventory_rejects_zero_price():
+    # Sin precio no se sabe cuántas unidades compra el fondo: se descarta.
+    ad = make_ad(adv_no="a", price="0", trade_type="BUY", surplus="10000")
+    assert has_inventory(ad, D("80000")) is False
 
 
 def test_best_buy_skips_ads_without_inventory():
@@ -142,7 +150,7 @@ def test_best_buy_skips_ads_without_inventory():
         make_ad(adv_no="cebo", price="790", trade_type="BUY", surplus="30"),
         make_ad(adv_no="real", price="800", trade_type="BUY", surplus="5000"),
     ]
-    best = best_buy(ads, D("1000"))
+    best = best_buy(ads, D("800000"))
     assert best is not None
     assert best.adv_no == "real"
 
@@ -152,7 +160,7 @@ def test_best_sell_skips_ads_without_inventory():
         make_ad(adv_no="cebo", price="830", trade_type="SELL", surplus="30"),
         make_ad(adv_no="real", price="820", trade_type="SELL", surplus="5000"),
     ]
-    best = best_sell(ads, D("1000"))
+    best = best_sell(ads, D("800000"))
     assert best is not None
     assert best.adv_no == "real"
 
@@ -165,7 +173,7 @@ def test_best_buy_skips_ads_outside_limits():
         make_ad(adv_no="ok", price="800", trade_type="BUY",
                 min_amount="0", max_amount="1000000"),
     ]
-    assert best_buy(ads, D("100")).adv_no == "ok"
+    assert best_buy(ads, D("80000")).adv_no == "ok"
 
 
 # --- find_best_opportunity ---------------------------------------------------
@@ -243,11 +251,33 @@ def test_est_profit_usdt_from_net_pct():
     buy_ads = [make_ad(adv_no="b1", price="800", trade_type="BUY")]
     sell_ads = [make_ad(adv_no="s1", price="816", trade_type="SELL")]  # 2% bruto
     # buffer 0.5% -> net 1.5%; sobre 200 USDT -> 3 USDT estimados.
-    t = target(max_usdt=D("200"), threshold_pct=D("1.0"), fee_buffer_pct=D("0.5"))
+    t = target(max_fiat=D("160000"), threshold_pct=D("1.0"), fee_buffer_pct=D("0.5"))
     opp = find_best_opportunity(buy_ads, sell_ads, t, NOW)
     assert opp is not None
     assert opp.net_pct == D("1.5")
     assert opp.est_profit_usdt == D("3.0")
+
+
+def test_unidades_fraccionarias_en_asset_caro():
+    """Con una cripto cara el mismo fondo fiat compra una fracción de unidad.
+
+    Es lo que hace que MAX_FIAT sirva igual para USDT que para BTC: el bot no
+    guarda el fondo, guarda las unidades que ese fondo compra a ese precio.
+    """
+    # Precio tipo BTC/VES; el fondo son 10.000.000 VES.
+    buy_ads = [make_ad(adv_no="b1", price="4000000000", trade_type="BUY",
+                       surplus="5", max_amount="99000000")]
+    sell_ads = [make_ad(adv_no="s1", price="4080000000", trade_type="SELL",
+                        surplus="5", max_amount="99000000")]
+    t = target(asset="BTC", max_fiat=D("10000000"), threshold_pct=D("1.0"))
+    opp = find_best_opportunity(buy_ads, sell_ads, t, NOW)
+    assert opp is not None
+    # 10.000.000 / 4.000.000.000 = 0.0025 BTC
+    assert opp.max_usdt == D("0.0025")
+    assert opp.net_pct == D("2")
+    # 0.0025 BTC * 2% = 0.00005 BTC
+    assert opp.est_profit_usdt == D("0.00005")
+    assert "/trade/buy/BTC?fiat=VES" in opp.buy_url
 
 
 def test_no_opportunity_below_threshold():

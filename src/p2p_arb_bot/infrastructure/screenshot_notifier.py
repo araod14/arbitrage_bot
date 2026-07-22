@@ -160,8 +160,8 @@ class ScreenshotNotifier:
         y += 28
         d.text(
             (x, y),
-            f"Monto máx: {opp.max_usdt} USDT   ·   "
-            f"Ganancia neta est.: {opp.est_profit_usdt} USDT",
+            f"Monto máx: {opp.max_usdt} {opp.asset}   ·   "
+            f"Ganancia neta est.: {opp.est_profit_usdt} {opp.asset}",
             font=f_body,
             fill=_MUTED,
         )

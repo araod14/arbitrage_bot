@@ -6,6 +6,7 @@ bot los ofrece como default en cada prompt (Enter = aceptar el default).
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -13,6 +14,14 @@ from decimal import Decimal, InvalidOperation
 from dotenv import load_dotenv
 
 from .domain.models import WatchTarget
+
+logger = logging.getLogger(__name__)
+
+#: Criptos que ofrece el mercado P2P de Binance y que el bot sabe vigilar. Es
+#: catálogo de configuración (alimenta el prompt interactivo y los checkboxes del
+#: dashboard), no lógica de dominio: el motor vigila cualquier asset que le llegue
+#: en un ``WatchTarget``. Ampliar la lista es añadir un elemento aquí.
+SUPPORTED_ASSETS: tuple[str, ...] = ("USDT", "BTC", "BNB", "ETH", "FDUSD", "DAI")
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -30,6 +39,18 @@ def _get_decimal(name: str, default: str) -> Decimal:
         return Decimal(default)
 
 
+def _get_assets() -> tuple[str, ...]:
+    """Criptos a vigilar, de ``ASSETS`` (CSV).
+
+    Acepta el antiguo ``ASSET`` (una sola) como alias legado para no romper los
+    ``.env`` ya escritos. Normaliza a mayúsculas y deduplica preservando el orden.
+    """
+    raw = os.getenv("ASSETS") or os.getenv("ASSET") or "USDT"
+    names = (a.strip().upper() for a in raw.split(","))
+    assets = tuple(dict.fromkeys(a for a in names if a))
+    return assets or ("USDT",)
+
+
 def _get_int(name: str, default: int) -> int:
     raw = os.getenv(name)
     try:
@@ -42,10 +63,10 @@ def _get_int(name: str, default: int) -> int:
 class Defaults:
     """Valores predeterminados leídos del entorno/``.env``."""
 
-    asset: str = "USDT"
+    assets: tuple[str, ...] = ("USDT",)
     fiat: str = "VES"
     pay_methods: tuple[str, ...] = ()
-    max_usdt: Decimal = Decimal("100")
+    max_fiat: Decimal = Decimal("5000")
     threshold_pct: Decimal = Decimal("1.0")
     fee_buffer_pct: Decimal = Decimal("0.0")
     outlier_max_dev_pct: Decimal = Decimal("15")
@@ -65,13 +86,22 @@ class Defaults:
     @classmethod
     def from_env(cls) -> "Defaults":
         load_dotenv()  # carga .env si existe; no falla si no está
+        if os.getenv("MAX_USDT") and not os.getenv("MAX_FIAT"):
+            # Un .env de antes del cambio a fondo en fiat: sin este aviso el bot
+            # arrancaría con el default de MAX_FIAT, que no tiene nada que ver con
+            # el fondo que el usuario cree tener configurado.
+            logger.warning(
+                "MAX_USDT ya no se lee: el fondo ahora va en fiat (MAX_FIAT). "
+                "Se usa MAX_FIAT=%s; define MAX_FIAT en tu .env para ajustarlo.",
+                os.getenv("MAX_FIAT") or "5000",
+            )
         methods_raw = os.getenv("PAY_METHODS", "") or ""
         methods = tuple(m.strip() for m in methods_raw.split(",") if m.strip())
         return cls(
-            asset=os.getenv("ASSET", "USDT") or "USDT",
+            assets=_get_assets(),
             fiat=os.getenv("FIAT", "VES") or "VES",
             pay_methods=methods,
-            max_usdt=_get_decimal("MAX_USDT", "100"),
+            max_fiat=_get_decimal("MAX_FIAT", "5000"),
             threshold_pct=_get_decimal("THRESHOLD_PCT", "1.0"),
             fee_buffer_pct=_get_decimal("FEE_BUFFER_PCT", "0.0"),
             outlier_max_dev_pct=_get_decimal("OUTLIER_MAX_DEV_PCT", "2.5"),
@@ -112,7 +142,7 @@ class AppConfig:
         if self.poll_interval_s <= 0:
             raise ValueError("POLL_INTERVAL_S debe ser > 0.")
         for t in self.targets:
-            if t.max_usdt <= 0:
-                raise ValueError(f"max_usdt debe ser > 0 (target {t.label}).")
+            if t.max_fiat <= 0:
+                raise ValueError(f"max_fiat debe ser > 0 (target {t.label}).")
             if not t.asset or not t.fiat:
                 raise ValueError("asset y fiat son obligatorios.")

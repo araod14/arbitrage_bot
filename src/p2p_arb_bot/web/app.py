@@ -59,6 +59,21 @@ def _fmt_miles(value: object) -> str:
         return "—"
 
 
+def _fmt_unidades(value: object) -> str:
+    """Formatea unidades de una cripto sin decimales de más ni de menos.
+
+    ``%.2f`` sirve para USDT pero convierte 0.00012 BTC en un inútil "0.00". Se
+    usan 8 decimales (la precisión de BTC) y se recortan los ceros a la derecha.
+    """
+    try:
+        texto = f"{float(value):.8f}".rstrip("0").rstrip(".")
+        return texto or "0"
+    except (TypeError, ValueError):
+        return "—"
+    except Exception:  # Undefined de Jinja: degradar sin romper la página
+        return "—"
+
+
 def create_app() -> FastAPI:
     # Carga .env para que DASHBOARD_PASSWORD/SECRET y las rutas estén disponibles
     # vía os.getenv, igual que hace el bot en Defaults.from_env(). Sin esto, el
@@ -68,6 +83,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="P2P Arb Dashboard")
 
     _TEMPLATES.env.filters["miles"] = _fmt_miles
+    _TEMPLATES.env.filters["unidades"] = _fmt_unidades
 
     secret = os.getenv("DASHBOARD_SECRET") or secrets.token_hex(32)
     app.add_middleware(SessionMiddleware, secret_key=secret)
@@ -358,15 +374,25 @@ def create_app() -> FastAPI:
 
     # --- configuración (login) ------------------------------------------
 
+    async def _discover(cfg: dict) -> list[tuple[str, str]]:
+        """Métodos de pago para el formulario; lista vacía si no hay red.
+
+        Los métodos dependen del fiat, no de la cripto, así que basta sondear con
+        la primera moneda seleccionada: sondearlas todas multiplicaría la espera
+        del formulario sin aportar nada.
+        """
+        assets = cfg.get("assets") or ["USDT"]
+        try:
+            return await env_store.discover_methods(assets[0], cfg["fiat"])
+        except Exception:  # noqa: BLE001 — sin red no debe romper el form
+            return []
+
     @app.get("/config", response_class=HTMLResponse)
     async def config_form(
         request: Request, _: None = Depends(auth.require_login)
     ) -> HTMLResponse:
         cfg = env_store.read_config()
-        try:
-            methods = await env_store.discover_methods(cfg["asset"], cfg["fiat"])
-        except Exception:  # noqa: BLE001 — sin red no debe romper el form
-            methods = []
+        methods = await _discover(cfg)
         return _TEMPLATES.TemplateResponse(
             request,
             "config.html",
@@ -376,6 +402,7 @@ def create_app() -> FastAPI:
                 "cfg": cfg,
                 "methods": methods,
                 "selected": set(cfg["pay_methods"]),
+                "selected_assets": set(cfg["assets"]),
                 "message": None,
                 "error": None,
             },
@@ -386,9 +413,10 @@ def create_app() -> FastAPI:
         request: Request,
         _: None = Depends(auth.require_login),
         threshold_pct: str = Form(...),
-        max_usdt: str = Form(...),
+        max_fiat: str = Form(...),
         poll_interval_s: int = Form(...),
         pay_methods: list[str] = Form(default=[]),
+        assets: list[str] = Form(default=[]),
     ) -> HTMLResponse:
         p = _paths()
         cfg = env_store.read_config()
@@ -397,9 +425,10 @@ def create_app() -> FastAPI:
             env_store.write_config(
                 p["env_path"],
                 threshold_pct=threshold_pct,
-                max_usdt=max_usdt,
+                max_fiat=max_fiat,
                 pay_methods=pay_methods,
                 poll_interval_s=poll_interval_s,
+                assets=assets,
             )
             if bot.is_running():
                 bot.restart()
@@ -410,10 +439,7 @@ def create_app() -> FastAPI:
         except (ValueError, OSError) as exc:
             error = f"No se pudo guardar: {exc}"
 
-        try:
-            methods = await env_store.discover_methods(cfg["asset"], cfg["fiat"])
-        except Exception:  # noqa: BLE001
-            methods = []
+        methods = await _discover(cfg)
         return _TEMPLATES.TemplateResponse(
             request,
             "config.html",
@@ -423,6 +449,9 @@ def create_app() -> FastAPI:
                 "cfg": cfg,
                 "methods": methods,
                 "selected": set(cfg["pay_methods"]),
+                # Tras un error se re-marcan las del formulario, no las guardadas:
+                # así el usuario no pierde lo que había elegido.
+                "selected_assets": set(a.upper() for a in assets) if error else set(cfg["assets"]),
                 "message": message,
                 "error": error,
             },

@@ -76,7 +76,7 @@ def target(**kw) -> WatchTarget:
         asset="USDT",
         fiat="VES",
         pay_methods=(),
-        max_usdt=D("100"),
+        max_fiat=D("80000"),   # equivale a 100 USDT a 800 VES
         threshold_pct=D("1.0"),
         fee_buffer_pct=D("0"),
     )
@@ -147,3 +147,47 @@ def test_multiple_repos_and_notifiers_all_receive():
 
     assert all(len(r.saved) == 1 for r in repos)
     assert all(len(n.opportunities) == 1 for n in notifiers)
+
+
+class FakeMultiAssetSource:
+    """Fuente con un libro distinto por cripto, para el barrido multi-moneda."""
+
+    def __init__(self, books: dict[str, tuple[list[Ad], list[Ad]]]) -> None:
+        self._books = books
+        self.assets_pedidos: list[str] = []
+
+    async def fetch_ads(self, *, asset: str, trade_type: TradeType, **_kw) -> list[Ad]:
+        self.assets_pedidos.append(asset)
+        buy, sell = self._books[asset]
+        return buy if trade_type == "BUY" else sell
+
+    async def aclose(self) -> None:  # pragma: no cover - no usado en tests
+        pass
+
+
+def test_varios_targets_generan_una_oportunidad_por_moneda():
+    source = FakeMultiAssetSource(
+        {
+            "USDT": ([make_ad("b1", "800", "BUY")], [make_ad("s1", "820", "SELL")]),
+            "BTC": (
+                [make_ad("b2", "4000000", "BUY")],
+                [make_ad("s2", "4120000", "SELL")],
+            ),
+        }
+    )
+    repo, notifier = FakeRepo(), FakeNotifier()
+    service = MonitorService(source, [repo], [notifier])  # type: ignore[arg-type]
+
+    targets = [
+        target(asset="USDT", max_fiat=D("80000")),
+        # El mismo fondo fiat, con un precio 5.000x mayor, compra una fracción.
+        target(asset="BTC", max_fiat=D("80000")),
+    ]
+    for t in targets:
+        asyncio.run(service.run_cycle(t))
+
+    assert [o.asset for o in repo.saved] == ["USDT", "BTC"]
+    assert set(source.assets_pedidos) == {"USDT", "BTC"}
+    usdt, btc = repo.saved
+    assert usdt.max_usdt == D("100")     # 80.000 / 800
+    assert btc.max_usdt == D("0.02")     # 80.000 / 4.000.000

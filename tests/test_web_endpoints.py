@@ -20,7 +20,7 @@ from starlette.testclient import TestClient
 
 from p2p_arb_bot.domain.models import Opportunity
 from p2p_arb_bot.infrastructure.sqlite_repo import SQLiteRepository
-from p2p_arb_bot.web import trade_store
+from p2p_arb_bot.web import env_store, trade_store
 from p2p_arb_bot.web.app import create_app
 
 PASSWORD = "secreto-de-test"
@@ -134,6 +134,65 @@ def test_trades_are_not_leaked_to_anonymous_dashboard(client, env):
     assert "Mis operaciones" not in body
     assert "nota-privada" not in body
     assert "vend-privado" not in body
+
+
+# --- configuración -----------------------------------------------------------
+
+@pytest.fixture
+def sin_red(monkeypatch):
+    """Evita que /config sondee Binance de verdad al descubrir métodos de pago."""
+    async def _vacio(asset, fiat, **_kw):
+        return []
+
+    monkeypatch.setattr(env_store, "discover_methods", _vacio)
+
+
+@pytest.fixture
+def env_limpio(monkeypatch):
+    """Aísla las claves que write_config vuelca en os.environ.
+
+    ``write_config`` hace ``os.environ.update`` a propósito (el bot hereda el
+    entorno del dashboard), así que sin esto un test filtraría su config a los
+    siguientes. monkeypatch las restaura al terminar.
+    """
+    for key in ("ASSETS", "MAX_FIAT", "THRESHOLD_PCT", "PAY_METHODS", "POLL_INTERVAL_S"):
+        monkeypatch.setenv(key, "")
+
+
+def test_config_form_lista_las_monedas(authed, sin_red):
+    body = authed.get("/config").text
+    assert 'name="assets"' in body
+    assert "BTC" in body
+    assert "Monedas a monitorear" in body
+
+
+def test_config_guarda_varias_monedas(authed, env, sin_red, env_limpio):
+    r = authed.post(
+        "/config",
+        data={
+            "threshold_pct": "1.5",
+            "max_fiat": "80000",
+            "poll_interval_s": "30",
+            "assets": ["USDT", "BTC"],
+        },
+    )
+    assert r.status_code == 200
+    assert "Configuración guardada" in r.text
+    lineas = (env / "empty.env").read_text(encoding="utf-8").splitlines()
+    assert "ASSETS=USDT,BTC" in lineas
+    assert "MAX_FIAT=80000" in lineas
+
+
+def test_config_sin_monedas_muestra_error(authed, env, sin_red, env_limpio):
+    r = authed.post(
+        "/config",
+        data={"threshold_pct": "1.5", "max_fiat": "80000", "poll_interval_s": "30"},
+    )
+    assert r.status_code == 200
+    assert "No se pudo guardar" in r.text
+    assert "al menos una moneda" in r.text
+    # Y no escribió nada en el .env.
+    assert "ASSETS=" not in (env / "empty.env").read_text(encoding="utf-8")
 
 
 # --- login -------------------------------------------------------------------

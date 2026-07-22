@@ -73,7 +73,10 @@ class WatchTarget:
     asset: str
     fiat: str
     pay_methods: tuple[str, ...]   # identifiers a vigilar; vacío => "todos"
-    max_usdt: Decimal
+    # Fondo disponible EN MONEDA FIAT (p. ej. VES), no en unidades del asset: es lo
+    # único comparable entre criptos (100 tiene sentido en USDT y ninguno en BTC).
+    # Las unidades a operar de cada asset se derivan dividiendo por su precio.
+    max_fiat: Decimal
     threshold_pct: Decimal
     fee_buffer_pct: Decimal = Decimal("0")
     merchant_check: bool = False
@@ -100,6 +103,9 @@ class Opportunity:
     sell_price: Decimal
     spread_pct: Decimal
     net_pct: Decimal
+    # Unidades del asset que cubre el fondo a este precio de compra
+    # (max_fiat / buy_price). Se llama max_usdt por compatibilidad con la columna
+    # de SQLite; con BTC/ETH sale fraccionario.
     max_usdt: Decimal
     buy_adv_no: str
     sell_adv_no: str

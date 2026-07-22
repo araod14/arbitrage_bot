@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from rich.console import Console
 
 from .application.monitor import MonitorService
-from .config import AppConfig, Defaults
+from .config import SUPPORTED_ASSETS, AppConfig, Defaults
 from .domain.models import WatchTarget
 from .infrastructure.binance_p2p import BinanceP2PSource
 from .infrastructure.console_notifier import ConsoleNotifier
@@ -75,11 +75,40 @@ async def _ask_bool(prompt: str, default: bool) -> bool:
     return raw.lower() in ("s", "si", "sí", "y", "yes", "1", "true")
 
 
+async def _select_assets(defaults: Defaults) -> tuple[str, ...]:
+    """Menú numerado de criptos a vigilar. Enter = mantener las del ``.env``."""
+    console.print("[bold]Monedas disponibles en P2P:[/]")
+    for i, name in enumerate(SUPPORTED_ASSETS, start=1):
+        marca = "[green]*[/]" if name in defaults.assets else " "
+        console.print(f"  {marca} [green]{i:>2}[/]. {name}")
+    console.print(
+        "Elige una o varias por número, separadas por coma "
+        f"(Enter = {', '.join(defaults.assets)})."
+    )
+    raw = await _ask("Selección", "")
+    if not raw:
+        return defaults.assets
+
+    chosen: list[str] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part.isdigit():
+            continue
+        idx = int(part)
+        if 1 <= idx <= len(SUPPORTED_ASSETS):
+            chosen.append(SUPPORTED_ASSETS[idx - 1])
+    # Sin selección válida se mantienen las del .env: mejor eso que quedarse sin
+    # ningún target y abortar por validación.
+    return tuple(dict.fromkeys(chosen)) or defaults.assets
+
+
 async def _select_pay_methods(
     source: BinanceP2PSource, defaults: Defaults
 ) -> tuple[str, ...]:
     console.print("[cyan]Descubriendo métodos de pago disponibles...[/]")
-    methods = await discover_pay_methods(source, defaults.asset, defaults.fiat)
+    # Los métodos de pago dependen del fiat, no de la cripto: basta sondear con la
+    # primera de las seleccionadas.
+    methods = await discover_pay_methods(source, defaults.assets[0], defaults.fiat)
     if not methods:
         console.print("[yellow]No se descubrieron métodos; se vigilarán todos.[/]")
         return ()
@@ -109,48 +138,53 @@ async def _select_pay_methods(
 async def build_config(source: BinanceP2PSource, defaults: Defaults) -> AppConfig:
     """Construye la config: modo no interactivo o prompts con defaults del .env."""
     if defaults.no_input:
-        target = WatchTarget(
-            asset=defaults.asset,
-            fiat=defaults.fiat,
-            pay_methods=defaults.pay_methods,
-            max_usdt=defaults.max_usdt,
-            threshold_pct=defaults.threshold_pct,
-            fee_buffer_pct=defaults.fee_buffer_pct,
-            merchant_check=defaults.merchant_check,
-            rows=defaults.rows,
-            outlier_max_dev_pct=defaults.outlier_max_dev_pct,
-        )
+        assets = defaults.assets
+        pay_methods = defaults.pay_methods
+        max_fiat = defaults.max_fiat
+        threshold = defaults.threshold_pct
+        fee_buffer = defaults.fee_buffer_pct
+        merchant = defaults.merchant_check
     else:
         console.print(
-            f"[bold]Configuración para {defaults.asset}/{defaults.fiat}[/] "
+            f"[bold]Configuración contra {defaults.fiat}[/] "
             "(Enter para aceptar el valor por defecto)\n"
         )
+        assets = await _select_assets(defaults)
+        defaults.assets = assets  # el descubrimiento de métodos usa la primera
         pay_methods = (
             defaults.pay_methods
             if defaults.pay_methods
             else await _select_pay_methods(source, defaults)
         )
-        max_usdt = await _ask_decimal("Monto máximo en USDT", defaults.max_usdt)
+        max_fiat = await _ask_decimal(
+            f"Fondo disponible ({defaults.fiat})", defaults.max_fiat
+        )
         threshold = await _ask_decimal("Umbral de ganancia neta %", defaults.threshold_pct)
         fee_buffer = await _ask_decimal("Buffer de fees %", defaults.fee_buffer_pct)
         merchant = await _ask_bool("Solo comerciantes verificados", defaults.merchant_check)
-        interval = await _ask_int("Intervalo de polling (s)", defaults.poll_interval_s)
-        defaults.poll_interval_s = interval
+        defaults.poll_interval_s = await _ask_int(
+            "Intervalo de polling (s)", defaults.poll_interval_s
+        )
 
-        target = WatchTarget(
-            asset=defaults.asset,
+    # Un target por moneda: mismos parámetros, distinto asset. El motor los recorre
+    # en cada barrido sin cambios estructurales.
+    targets = [
+        WatchTarget(
+            asset=asset,
             fiat=defaults.fiat,
             pay_methods=pay_methods,
-            max_usdt=max_usdt,
+            max_fiat=max_fiat,
             threshold_pct=threshold,
             fee_buffer_pct=fee_buffer,
             merchant_check=merchant,
             rows=defaults.rows,
             outlier_max_dev_pct=defaults.outlier_max_dev_pct,
         )
+        for asset in assets
+    ]
 
     config = AppConfig(
-        targets=[target],
+        targets=targets,
         poll_interval_s=defaults.poll_interval_s,
         db_path=defaults.db_path,
         log_path=defaults.log_path,
@@ -186,8 +220,9 @@ async def amain(defaults: Defaults) -> None:
         )
 
         methods_lbl = ", ".join(config.targets[0].pay_methods) or "todos"
+        targets_lbl = ", ".join(t.label for t in config.targets)
         console.print(
-            f"\n[bold green]Monitoreando[/] {config.targets[0].label} "
+            f"\n[bold green]Monitoreando[/] {targets_lbl} "
             f"| métodos: {methods_lbl} "
             f"| umbral: {config.targets[0].threshold_pct}% "
             f"| cada ~{config.poll_interval_s}s. [dim]Ctrl+C para salir.[/]\n"

@@ -13,6 +13,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import pytest
+
 from p2p_arb_bot.domain.models import Opportunity
 from p2p_arb_bot.infrastructure.sqlite_repo import SQLiteRepository
 from p2p_arb_bot.infrastructure.status_notifier import StatusNotifier
@@ -28,16 +30,17 @@ def test_write_config_preserves_other_keys(tmp_path):
         "ASSET=USDT\n"
         "THRESHOLD_PCT=1.0\n"
         "FIAT=VES\n"
-        "MAX_USDT=100\n",
+        "MAX_FIAT=5000\n",
         encoding="utf-8",
     )
 
     env_store.write_config(
         str(env),
         threshold_pct="2.5",
-        max_usdt="250",
+        max_fiat="250000",
         pay_methods=["PagoMovil", "Banesco"],
         poll_interval_s=45,
+        assets=["USDT", "BTC"],
     )
 
     content = env.read_text(encoding="utf-8")
@@ -46,7 +49,8 @@ def test_write_config_preserves_other_keys(tmp_path):
     assert "ASSET=USDT" in lines
     assert "FIAT=VES" in lines
     assert "THRESHOLD_PCT=2.5" in lines
-    assert "MAX_USDT=250" in lines
+    assert "MAX_FIAT=250000" in lines
+    assert "ASSETS=USDT,BTC" in lines
     assert "PAY_METHODS=PagoMovil,Banesco" in lines
     assert "POLL_INTERVAL_S=45" in lines
     # No duplica claves existentes.
@@ -59,9 +63,10 @@ def test_write_config_appends_missing_keys(tmp_path):
     env_store.write_config(
         str(env),
         threshold_pct="1.0",
-        max_usdt="100",
+        max_fiat="80000",
         pay_methods=[],
         poll_interval_s=30,
+        assets=["USDT"],
     )
     lines = env.read_text(encoding="utf-8").splitlines()
     assert "PAY_METHODS=" in lines  # vacío = todos
@@ -75,9 +80,10 @@ def test_write_config_rejects_bad_values(tmp_path):
         env_store.write_config(
             str(env),
             threshold_pct="1.0",
-            max_usdt="0",  # inválido
+            max_fiat="0",  # inválido
             pay_methods=[],
             poll_interval_s=30,
+            assets=["USDT"],
         )
         assert False, "debería lanzar ValueError"
     except ValueError:
@@ -91,12 +97,43 @@ def test_write_config_updates_os_environ(tmp_path, monkeypatch):
     env_store.write_config(
         str(env),
         threshold_pct="3.3",
-        max_usdt="500",
+        max_fiat="500000",
         pay_methods=["Mercantil"],
         poll_interval_s=20,
+        assets=["USDT"],
     )
     assert os.environ["THRESHOLD_PCT"] == "3.3"
     assert os.environ["PAY_METHODS"] == "Mercantil"
+
+
+def test_write_config_rejects_empty_assets(tmp_path):
+    """Sin ninguna moneda marcada no habría targets y el bot no arrancaría."""
+    env = tmp_path / ".env"
+    env.write_text("", encoding="utf-8")
+    with pytest.raises(ValueError):
+        env_store.write_config(
+            str(env),
+            threshold_pct="1.0",
+            max_fiat="80000",
+            pay_methods=[],
+            poll_interval_s=30,
+            assets=[],
+        )
+
+
+def test_write_config_rejects_unknown_asset(tmp_path):
+    """El POST podría venir manipulado: solo se aceptan monedas del catálogo."""
+    env = tmp_path / ".env"
+    env.write_text("", encoding="utf-8")
+    with pytest.raises(ValueError):
+        env_store.write_config(
+            str(env),
+            threshold_pct="1.0",
+            max_fiat="80000",
+            pay_methods=[],
+            poll_interval_s=30,
+            assets=["DOGE"],
+        )
 
 
 # --- StatusNotifier ---------------------------------------------------------
@@ -109,7 +146,7 @@ def test_status_notifier_writes_valid_json(tmp_path):
 
     target = WatchTarget(
         asset="USDT", fiat="VES", pay_methods=(),
-        max_usdt=Decimal("100"), threshold_pct=Decimal("1"),
+        max_fiat=Decimal("80000"), threshold_pct=Decimal("1"),
     )
     asyncio.run(notifier.notify_heartbeat(target, Decimal("2.5")))
 
@@ -171,7 +208,9 @@ def test_stats_24h(tmp_path):
     stats = db_reader.stats_24h(str(db))
     assert stats["count_24h"] == 3
     assert stats["best_net_pct"] == 3.0
-    assert stats["total_profit_usdt"] == 4.5
+    # 1.5 unidades * 36 VES de precio de compra, por 3 filas.
+    assert stats["total_profit_fiat"] == 162.0
+    assert stats["fiat"] == "VES"
     assert stats["last_detection"] is not None
 
 

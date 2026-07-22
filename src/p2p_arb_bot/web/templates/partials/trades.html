@@ -14,8 +14,8 @@
   </div>
   <div class="card kpi">
     <span class="kpi-label">Profit real</span>
-    <span class="kpi-value {{ 'pos' if summary.profit_usdt > 0 else ('neg' if summary.profit_usdt < 0 else '') }}">
-      {{ '%.2f'|format(summary.profit_usdt) }} <span class="muted small">USDT</span>
+    <span class="kpi-value {{ 'pos' if summary.profit_fiat > 0 else ('neg' if summary.profit_fiat < 0 else '') }}">
+      {{ '%.2f'|format(summary.profit_fiat) }} <span class="muted small">{{ summary.fiat }}</span>
     </span>
   </div>
   <div class="card kpi">
