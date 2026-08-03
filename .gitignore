@@ -44,3 +44,6 @@ capturas_oportunidades/
 .vscode/
 *.swp
 .DS_Store
+
+# Artefactos de Playwright MCP (capturas de trabajo, no del repo)
+.playwright-mcp/

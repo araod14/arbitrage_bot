@@ -11,9 +11,16 @@ enlaces a los anuncios.
 > anuncios y **no** usa API keys de trading de Binance. Usa únicamente el
 > endpoint público de búsqueda de anuncios.
 
+![Dashboard del bot: estado, KPIs de 24 h, monto a usar en la operación y tabla de oportunidades recientes](docs/dashboard.png)
+
+*Instancia en vivo: <https://arbitragebot.automateca.site/> (supervisión pública;
+arrancar, parar y configurar exigen login).*
+
 ## Arquitectura
 
 Arquitectura limpia con dependencias apuntando hacia el dominio:
+
+![Capas del proyecto: domain, application, infrastructure y main.py como composition root](docs/arquitectura.png)
 
 ```
 src/p2p_arb_bot/
@@ -114,6 +121,18 @@ así el dashboard no necesita pegarle a Binance por su cuenta.
 
 En Docker el dashboard es el **contenedor principal** y arranca el bot como
 subproceso (ver más abajo).
+
+### Fichas de oportunidad (opcional)
+
+Las oportunidades P2P son efímeras: cuando abres el enlace, los anuncios que las
+producían ya suelen haber expirado. Con `SCREENSHOTS=true` el bot dibuja con Pillow
+—sin navegador— una ficha PNG en `SCREENSHOTS_DIR` en el instante de la detección,
+con las dos piernas de la operación y la aritmética del spread:
+
+![Ficha PNG generada por el bot: pierna de compra, pierna de venta, advNo, enlaces y spread](docs/ficha-oportunidad.png)
+
+Está **apagado por defecto** (es una función de desarrollo: genera un PNG por
+oportunidad y llena el disco si el umbral es bajo).
 
 ## Despliegue con Docker
 
@@ -250,3 +269,8 @@ pytest
 Los tests cubren la capa de dominio (spread, filtrado por límites, pares
 cruzados) y el caso de uso (persistencia, supresión de duplicados, heartbeats,
 múltiples adaptadores) usando fakes, **sin red ni disco**.
+
+## Licencia
+
+MIT — ver [LICENSE](LICENSE). La fuente Liberation Sans empaquetada en
+`src/p2p_arb_bot/infrastructure/fonts/` conserva su propia licencia (SIL OFL).
