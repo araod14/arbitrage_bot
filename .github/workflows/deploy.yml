@@ -1,0 +1,53 @@
+# Redespliegue automático en el VPS. Generado por /root/deploy/gen-workflows.sh
+#
+# Este workflow no decide nada: solo dispara. Toda la lógica (qué servicios,
+# health check, rollback) vive en /root/deploy/projects/arbitrage_bot.conf, fuera
+# de este repo — que es público y cuyo runner corre como root.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'SHA a desplegar (vacío = HEAD de main)'
+        required: false
+        default: ''
+
+# Un despliegue a la vez por repo. cancel-in-progress: false a propósito —
+# cancelar a mitad de un rebuild dejaría el árbol en el commit nuevo con la
+# imagen vieja corriendo.
+concurrency:
+  group: deploy-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # La label vps-arbitrage_bot garantiza que el job cae en SU runner.
+    runs-on: [self-hosted, linux, x64, vps, vps-arbitrage_bot]
+    timeout-minutes: 90
+
+    steps:
+      # Sin actions/checkout: el despliegue ocurre sobre el árbol de trabajo vivo
+      # del VPS, que es donde están los .env y los bind mounts. Ver
+      # /root/deploy/README.md.
+      - name: Desplegar en el host
+        env:
+          TARGET_SHA: ${{ github.event.inputs.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          /root/deploy/deploy.sh arbitrage_bot --sha "$TARGET_SHA"
+
+      - name: Cola del log si falla
+        if: failure()
+        run: |
+          log=$(ls -t /var/log/vps-deploy/arbitrage_bot-*.log 2>/dev/null | head -1)
+          [ -n "$log" ] && tail -n 150 "$log"
