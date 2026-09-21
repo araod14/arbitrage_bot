@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Configurar · P2P Arb{% endblock %}
 {% block content %}
-<div class="card narrow">
+<div class="card config-card">
+  <p class="eyebrow">AJUSTES DEL MONITOR</p>
   <h2>Configuración del bot</h2>
   <p class="muted small">
     Pares vigilados:
@@ -12,15 +13,17 @@
   {% if error %}<p class="alert error">{{ error }}</p>{% endif %}
 
   <form action="/config" method="post" class="form">
+    <h3>Presupuesto y detección</h3>
+    <p class="muted small">El fondo se evalúa para cada oportunidad; no se divide entre las monedas seleccionadas.</p>
     <label>Umbral de ganancia neta (%)
-      <input type="text" name="threshold_pct" value="{{ cfg.threshold_pct }}" required>
+      <input type="text" inputmode="decimal" name="threshold_pct" value="{{ cfg.threshold_pct }}" required>
     </label>
 
     <label>Fondo disponible ({{ cfg.fiat }})
-      <input type="text" name="max_fiat" value="{{ cfg.max_fiat }}" required>
+      <input type="text" inputmode="decimal" name="max_fiat" value="{{ cfg.max_fiat }}" required>
     </label>
 
-    <label>Intervalo de polling (s)
+    <label>Intervalo de consulta (segundos)
       <input type="number" name="poll_interval_s" min="1" value="{{ cfg.poll_interval_s }}" required>
     </label>
 

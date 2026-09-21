@@ -13,7 +13,7 @@
     </span>
   </div>
   <div class="card kpi">
-    <span class="kpi-label">Profit real</span>
+    <span class="kpi-label">Ganancia realizada</span>
     <span class="kpi-value {{ 'pos' if summary.profit_fiat > 0 else ('neg' if summary.profit_fiat < 0 else '') }}">
       {{ '%.2f'|format(summary.profit_fiat) }} <span class="muted small">{{ summary.fiat }}</span>
     </span>
@@ -40,7 +40,7 @@
         <th class="num">Neto real</th>
         <th class="num">Est.</th>
         <th class="num">Δ</th>
-        <th class="num">Profit</th>
+        <th class="num">Ganancia</th>
         <th>Contrapartes</th>
         <th>Notas</th>
       </tr>
@@ -48,7 +48,7 @@
     <tbody>
       {% for t in trades %}
       <tr>
-        <td>
+        <td data-label="Estado">
           {% if t.status == 'completed' %}
           <span class="badge on">cerrada</span>
           {% else %}
@@ -56,30 +56,30 @@
           <div class="muted small">{{ t.failure_label }}</div>
           {% endif %}
         </td>
-        <td>{{ t.asset }}/{{ t.fiat }}<div class="muted small">{{ t.detected_local or '' }}</div></td>
-        <td class="num">
+        <td data-label="Par">{{ t.asset }}/{{ t.fiat }}<div class="muted small">{{ t.detected_local or '' }}</div></td>
+        <td data-label="Neto real" class="num">
           {% if t.status == 'completed' %}
           <span class="{{ 'pos' if t.net_pct >= 0 else 'neg' }}">{{ '%.3f'|format(t.net_pct) }}%</span>
           {% else %}—{% endif %}
         </td>
-        <td class="num muted">
+        <td data-label="Est." class="num muted">
           {% if t.est_net_pct is not none %}{{ '%.3f'|format(t.est_net_pct) }}%{% else %}—{% endif %}
         </td>
-        <td class="num">
+        <td data-label="Δ" class="num">
           {% if t.net_pct_delta is not none %}
           <span class="{{ 'pos' if t.net_pct_delta >= 0 else 'neg' }}">{{ '%+.3f'|format(t.net_pct_delta) }}</span>
           {% else %}—{% endif %}
         </td>
-        <td class="num">
-          {% if t.status == 'completed' %}~{{ '%.2f'|format(t.profit_usdt) }}{% else %}—{% endif %}
+        <td data-label="Ganancia" class="num">
+          {% if t.status == 'completed' %}~{{ t.profit_usdt|unidades }} {{ t.asset }}{% else %}—{% endif %}
         </td>
-        <td class="small muted">
+        <td data-label="Contrapartes" class="small muted">
           {% if t.buy_advertiser or t.sell_advertiser %}
           {{ t.buy_advertiser or '?' }} → {{ t.sell_advertiser or '?' }}
           <div>{{ t.buy_pay_method or '' }}{% if t.sell_pay_method and t.sell_pay_method != t.buy_pay_method %} / {{ t.sell_pay_method }}{% endif %}</div>
           {% else %}—{% endif %}
         </td>
-        <td class="small muted">{{ t.notes or '' }}</td>
+        <td data-label="Notas" class="small muted">{{ t.notes or '' }}</td>
       </tr>
       {% endfor %}
     </tbody>

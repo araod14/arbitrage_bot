@@ -2,7 +2,7 @@
    cálculo (reflejan comisiones y redondeos); los precios se guardan de referencia. #}
 {# Al guardar, la respuesta repinta #trades y el formulario se cierra solo. #}
 <form class="form trade-form" hx-post="/trades" hx-target="#trades" hx-swap="innerHTML"
-      hx-on::after-request="if(event.detail.successful) document.getElementById('trade-form').innerHTML=''">
+      hx-disabled-elt="find button[type=submit]">
   <input type="hidden" name="status" value="completed">
   <input type="hidden" name="opportunity_id" value="{{ opp_id }}">
   {% include "partials/_opp_snapshot_fields.html" %}
@@ -13,6 +13,7 @@
     </h3>
   </div>
 
+  <h4 class="form-section-title">Montos de la operación</h4>
   <div class="field-grid">
     <label>Precio real de compra
       <input type="text" name="real_buy_price" inputmode="decimal"
@@ -39,6 +40,7 @@
   <p class="muted small">Los prellenados vienen de la estimación del bot: corrígelos con lo que
     realmente pasó, que es justo lo que da valor a la comparación.</p>
 
+  <h4 class="form-section-title">Contrapartes y métodos</h4>
   <div class="field-grid">
     <label>Vendedor (le compraste)
       <input type="text" name="buy_advertiser" value="{{ opp.buy_advertiser if opp else '' }}">
@@ -61,6 +63,6 @@
   <div class="btn-row">
     <button class="btn primary" type="submit">Guardar operación</button>
     <button class="btn" type="button"
-            hx-on:click="document.getElementById('trade-form').innerHTML=''">Cancelar</button>
+            data-close-dialog>Cancelar</button>
   </div>
 </form>

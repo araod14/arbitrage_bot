@@ -346,3 +346,43 @@ def test_config_combina_metodos_de_todas_las_monedas(authed, monkeypatch, falla_
     assert response.text.count('value="Banesco"') == 1
     assert 'value="Mercantil"' in response.text
     assert ('value="PagoMovil"' in response.text) == (not falla_primera)
+
+
+def test_panel_registro_solo_con_sesion_y_fuera_del_refresco(client, authed):
+    body = authed.get('/').text
+    assert '<dialog id="trade-dialog"' in body
+    assert 'id="trade-form"' in body
+    assert 'aria-labelledby="dialog-title"' in body
+    assert '<details class="card log-panel">' in body
+    authed.post('/logout')
+    public = client.get('/').text
+    assert '<dialog' not in public
+    assert 'id="trade-form"' not in public
+
+
+def test_formularios_del_panel_conservan_snapshot_y_control_de_envio(authed, env):
+    _seed_opportunity(str(env / 'opps.db'))
+    for route in ('/trades/new?opp_id=1', '/trades/fail?opp_id=1'):
+        response = authed.get(route)
+        assert response.status_code == 200
+        assert 'name="est_profit_usdt" value="2.77"' in response.text
+        assert 'hx-disabled-elt="find button[type=submit]"' in response.text
+        assert 'data-close-dialog' in response.text
+
+
+def test_oportunidad_una_sola_fila_para_avisos_y_etiquetas_moviles(client, env):
+    _seed_opportunity(str(env / 'opps.db'))
+    body = client.get('/partials/opportunities').text
+    assert body.count('data-opp-id="1"') == 1
+    assert 'data-label="Par"' in body
+    assert 'data-label="Ganancia est."' in body
+
+
+def test_historial_muestra_ganancias_btc_sin_redondear_a_cero(authed):
+    response = _post_completed(
+        authed, asset='BTC', real_usdt='0.0001',
+        real_fiat_buy='1000', real_fiat_sell='1020',
+    )
+    assert response.status_code == 200
+    assert '~0.000002 BTC' in response.text
+    assert 'Ganancia realizada' in response.text

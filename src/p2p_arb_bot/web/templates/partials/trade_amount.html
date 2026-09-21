@@ -1,5 +1,6 @@
 {% if opportunity %}
   {% set o = opportunity %}
+  <div class="opportunity-summary"><div><span class="asset-mark" aria-hidden="true">{{ o.asset[:1] }}</span><strong>{{ o.asset }} <span class="muted">/ {{ o.fiat }}</span></strong></div><div><span class="kpi-label">Margen neto estimado</span><strong class="pos">{{ '%.3f'|format(o.net_pct) }}%</strong></div></div>
   {% if o.feasible %}
   <div class="trade-legs">
     <div class="trade-leg">
@@ -15,7 +16,7 @@
     </div>
   </div>
   <div class="trade-foot muted small">
-    Fondo: {{ o.usable_usdt|unidades }} {{ o.asset }}
+    Presupuesto de esta oportunidad: {{ o.usable_fiat_buy|miles }} {{ o.fiat }}
     · Mín. compra: {{ o.buy_min_amount|miles }} {{ o.fiat }}
     · Mín. venta: {{ o.sell_min_amount|miles }} {{ o.fiat }}
     · <a href="{{ o.buy_url }}" target="_blank" rel="noopener">libro compra</a>
@@ -26,7 +27,7 @@
   <p class="neg">
     Tu fondo no alcanza el mínimo de esta oportunidad
     (se requieren ~{{ o.min_required_fiat_buy|miles }} {{ o.fiat }}).
-    <span class="muted">Aumenta <code>MAX_FIAT</code> en la configuración.</span>
+    <span class="muted">Aumenta el fondo disponible en la configuración.</span>
   </p>
   {% endif %}
 {% else %}

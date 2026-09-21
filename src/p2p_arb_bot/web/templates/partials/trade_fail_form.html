@@ -1,7 +1,7 @@
 {# "No pude": registra la oportunidad perdida y por qué. Sin esto, el histórico solo
    contaría los aciertos y el hit-rate saldría siempre del 100%. #}
 <form class="form trade-form" hx-post="/trades" hx-target="#trades" hx-swap="innerHTML"
-      hx-on::after-request="if(event.detail.successful) document.getElementById('trade-form').innerHTML=''">
+      hx-disabled-elt="find button[type=submit]">
   <input type="hidden" name="status" value="failed">
   <input type="hidden" name="opportunity_id" value="{{ opp_id }}">
   {% include "partials/_opp_snapshot_fields.html" %}
@@ -29,6 +29,6 @@
   <div class="btn-row">
     <button class="btn primary" type="submit">Guardar</button>
     <button class="btn" type="button"
-            hx-on:click="document.getElementById('trade-form').innerHTML=''">Cancelar</button>
+            data-close-dialog>Cancelar</button>
   </div>
 </form>

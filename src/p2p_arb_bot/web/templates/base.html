@@ -7,11 +7,14 @@
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js" defer></script>
   <script src="/static/notify.js" defer></script>
+  <script src="/static/ui.js" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Saltar al contenido</a>
   <header class="topbar">
-    <a href="/" class="brand">⚡ P2P Arb <span class="muted">Dashboard</span></a>
-    <nav>
+    <a href="/" class="brand"><svg class="brand-icon" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 23 13 9l6 10 8-14M20 5h7v7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg> P2P Arb <span class="brand-tag">MONITOR</span></a>
+    <nav aria-label="Navegación principal">
+      <a href="/" class="navlink">Oportunidades</a>
       {% block topbar_extra %}{% endblock %}
       {% if authed %}
         <a href="/config" class="navlink">Configurar</a>
@@ -19,11 +22,11 @@
           <button class="navlink ghost" type="submit">Salir</button>
         </form>
       {% else %}
-        <a href="/login" class="navlink">Login</a>
+        <a href="/login" class="navlink">Iniciar sesión</a>
       {% endif %}
     </nav>
   </header>
-  <main class="container">
+  <main class="container" id="main-content">
     {% block content %}{% endblock %}
   </main>
   <footer class="footer muted">Solo monitoreo · los datos se refrescan automáticamente</footer>
