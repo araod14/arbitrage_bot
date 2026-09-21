@@ -313,3 +313,36 @@ def test_unknown_status_is_not_trusted(authed):
     r = _post_completed(authed, status="cualquier-cosa")
     assert r.status_code == 200
     assert "cerrada" in r.text
+
+
+def test_profit_btc_conserva_precision_y_unidad(client, env):
+    import sqlite3
+
+    _seed_opportunity(str(env / "opps.db"))
+    with sqlite3.connect(env / "opps.db") as conn:
+        conn.execute("UPDATE opportunities SET asset = 'BTC', est_profit_usdt = '0.000002'")
+    response = client.get("/partials/opportunities")
+    assert response.status_code == 200
+    assert "~0.000002 BTC" in response.text
+
+
+@pytest.mark.parametrize("falla_primera", [False, True])
+def test_config_combina_metodos_de_todas_las_monedas(authed, monkeypatch, falla_primera):
+    monkeypatch.setenv("ASSETS", "USDT,BTC")
+    calls = []
+
+    async def discover(asset, fiat):
+        calls.append(asset)
+        if asset == "USDT":
+            if falla_primera:
+                raise TimeoutError("sin respuesta")
+            return [("PagoMovil", "PagoMovil"), ("Banesco", "Banesco")]
+        return [("Banesco", "Banesco"), ("Mercantil", "Mercantil")]
+
+    monkeypatch.setattr(env_store, "discover_methods", discover)
+    response = authed.get("/config")
+    assert response.status_code == 200
+    assert calls == ["USDT", "BTC"]
+    assert response.text.count('value="Banesco"') == 1
+    assert 'value="Mercantil"' in response.text
+    assert ('value="PagoMovil"' in response.text) == (not falla_primera)

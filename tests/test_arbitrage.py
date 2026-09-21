@@ -443,3 +443,34 @@ def test_realized_pnl_without_investment_is_zero():
     assert r.profit_fiat == D("0")
     assert r.net_pct == D("0")
     assert r.profit_usdt == D("0")
+
+
+def test_venta_valida_unidades_y_fiat_de_la_compra():
+    """El fondo compra 10 unidades: la venta debe aceptar 10 y 1100 fiat."""
+    buy = make_ad(adv_no="b", price="100", trade_type="BUY")
+    t = target(max_fiat=D("1000"))
+    cases = [
+        ({"surplus": "9.5"}, False),
+        ({"max_amount": "1050"}, False),
+        ({"min_amount": "1050"}, True),
+        ({"min_amount": "1100", "max_amount": "1100", "surplus": "10"}, True),
+    ]
+    for limits, expected in cases:
+        sell = make_ad(adv_no="s", price="110", trade_type="SELL", **limits)
+        opp = find_best_opportunity([buy], [sell], t, NOW)
+        assert (opp is not None) == expected, limits
+        assert best_spread([buy], [sell], t) == (D("10") if expected else None)
+        if opp:
+            assert opp.max_usdt == D("10")
+
+
+def test_compra_alternativa_si_la_mas_barata_no_se_puede_vender():
+    buys = [make_ad(adv_no="barata", price="100", trade_type="BUY"),
+            make_ad(adv_no="viable", price="125", trade_type="BUY")]
+    sell = make_ad(adv_no="s", price="150", trade_type="SELL", surplus="8")
+    t = target(max_fiat=D("1000"))
+    opp = find_best_opportunity(buys, [sell], t, NOW)
+    assert opp is not None
+    assert opp.buy_adv_no == "viable"
+    assert opp.max_usdt == D("8")
+    assert best_spread(buys, [sell], t) == opp.net_pct == D("20")

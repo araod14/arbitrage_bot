@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from .models import Ad, Opportunity, RealizedPnl, TradeSizing, WatchTarget, book_url
 
@@ -211,6 +211,28 @@ def _methods_for(target: WatchTarget) -> list[str]:
     return list(target.pay_methods) if target.pay_methods else [_ALL]
 
 
+def _eligible_pairs(
+    buy_ads: Iterable[Ad], sell_ads: Iterable[Ad], target: WatchTarget,
+) -> Iterator[tuple[Ad, Ad, str, str]]:
+    """Valida cada venta con las unidades y el importe de su compra concreta."""
+    buys, sells = list(buy_ads), list(sell_ads)
+    methods = _methods_for(target)
+    dev = target.outlier_max_dev_pct
+    for bm in methods:
+        for buy in _eligible(buys, bm, target.max_fiat, dev):
+            units = target.max_fiat / buy.price
+            for sm in methods:
+                eligible = [
+                    sell for sell in sells
+                    if (sm == _ALL or sm in sell.pay_methods)
+                    and sell.price > 0
+                    and sell.surplus >= units
+                    and accepts_amount(sell, units * sell.price)
+                ]
+                for sell in drop_outliers(eligible, dev):
+                    yield buy, sell, bm, sm
+
+
 def best_spread(
     buy_ads: Iterable[Ad],
     sell_ads: Iterable[Ad],
@@ -220,23 +242,11 @@ def best_spread(
 
     Devuelve ``None`` si no hay ningún par compra/venta elegible.
     """
-    buy_ads = list(buy_ads)
-    sell_ads = list(sell_ads)
-    methods = _methods_for(target)
-    dev = target.outlier_max_dev_pct
-    best: Decimal | None = None
-    for bm in methods:
-        bb = best_buy(buy_ads, target.max_fiat, bm, dev)
-        if bb is None:
-            continue
-        for sm in methods:
-            ss = best_sell(sell_ads, target.max_fiat, sm, dev)
-            if ss is None:
-                continue
-            net = compute_spread(bb.price, ss.price) - target.fee_buffer_pct
-            if best is None or net > best:
-                best = net
-    return best
+    return max(
+        (compute_spread(buy.price, sell.price) - target.fee_buffer_pct
+         for buy, sell, _, _ in _eligible_pairs(buy_ads, sell_ads, target)),
+        default=None,
+    )
 
 
 def find_best_opportunity(
@@ -251,30 +261,18 @@ def find_best_opportunity(
     elige la de mayor ``net_pct`` y la devuelve solo si
     ``net_pct >= target.threshold_pct``. Si no, devuelve ``None``.
     """
-    buy_ads = list(buy_ads)
-    sell_ads = list(sell_ads)
-    methods = _methods_for(target)
-    dev = target.outlier_max_dev_pct
-
     best_buy_ad: Ad | None = None
     best_sell_ad: Ad | None = None
     best_buy_method = ""
     best_sell_method = ""
     best_net: Decimal | None = None
 
-    for bm in methods:
-        bb = best_buy(buy_ads, target.max_fiat, bm, dev)
-        if bb is None:
-            continue
-        for sm in methods:
-            ss = best_sell(sell_ads, target.max_fiat, sm, dev)
-            if ss is None:
-                continue
-            net = compute_spread(bb.price, ss.price) - target.fee_buffer_pct
-            if best_net is None or net > best_net:
-                best_net = net
-                best_buy_ad, best_sell_ad = bb, ss
-                best_buy_method, best_sell_method = bm, sm
+    for bb, ss, bm, sm in _eligible_pairs(buy_ads, sell_ads, target):
+        net = compute_spread(bb.price, ss.price) - target.fee_buffer_pct
+        if best_net is None or net > best_net:
+            best_net = net
+            best_buy_ad, best_sell_ad = bb, ss
+            best_buy_method, best_sell_method = bm, sm
 
     if best_net is None or best_buy_ad is None or best_sell_ad is None:
         return None

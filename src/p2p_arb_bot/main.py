@@ -106,9 +106,14 @@ async def _select_pay_methods(
     source: BinanceP2PSource, defaults: Defaults
 ) -> tuple[str, ...]:
     console.print("[cyan]Descubriendo métodos de pago disponibles...[/]")
-    # Los métodos de pago dependen del fiat, no de la cripto: basta sondear con la
-    # primera de las seleccionadas.
-    methods = await discover_pay_methods(source, defaults.assets[0], defaults.fiat)
+    # Cada libro puede tener métodos distintos; conserva la unión sin duplicados.
+    available: dict[str, str] = {}
+    for asset in dict.fromkeys(defaults.assets):
+        try:
+            available.update(await discover_pay_methods(source, asset, defaults.fiat))
+        except Exception:
+            logger.warning("No se pudieron descubrir métodos para %s/%s", asset, defaults.fiat)
+    methods = sorted(available.items(), key=lambda item: item[0].lower())
     if not methods:
         console.print("[yellow]No se descubrieron métodos; se vigilarán todos.[/]")
         return ()
@@ -150,7 +155,7 @@ async def build_config(source: BinanceP2PSource, defaults: Defaults) -> AppConfi
             "(Enter para aceptar el valor por defecto)\n"
         )
         assets = await _select_assets(defaults)
-        defaults.assets = assets  # el descubrimiento de métodos usa la primera
+        defaults.assets = assets  # descubre métodos de todas las seleccionadas
         pay_methods = (
             defaults.pay_methods
             if defaults.pay_methods

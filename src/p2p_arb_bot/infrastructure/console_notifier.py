@@ -51,7 +51,7 @@ class ConsoleNotifier:
         table.add_row(
             "Profit est.",
             f"~{opp.est_profit_fiat:.2f} {opp.fiat}  "
-            f"([bold]~{opp.est_profit_usdt:.2f} {opp.asset}[/])",
+            f"([bold]~{opp.est_profit_usdt:f} {opp.asset}[/])",
         )
         table.add_row("Link compra", f"[link={opp.buy_url}]{opp.buy_url}[/link]")
         table.add_row("Link venta", f"[link={opp.sell_url}]{opp.sell_url}[/link]")

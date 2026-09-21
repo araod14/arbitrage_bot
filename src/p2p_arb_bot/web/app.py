@@ -375,17 +375,14 @@ def create_app() -> FastAPI:
     # --- configuración (login) ------------------------------------------
 
     async def _discover(cfg: dict) -> list[tuple[str, str]]:
-        """Métodos de pago para el formulario; lista vacía si no hay red.
-
-        Los métodos dependen del fiat, no de la cripto, así que basta sondear con
-        la primera moneda seleccionada: sondearlas todas multiplicaría la espera
-        del formulario sin aportar nada.
-        """
-        assets = cfg.get("assets") or ["USDT"]
-        try:
-            return await env_store.discover_methods(assets[0], cfg["fiat"])
-        except Exception:  # noqa: BLE001 — sin red no debe romper el form
-            return []
+        """Combina los métodos de los anuncios de todas las monedas elegidas."""
+        methods: dict[str, str] = {}
+        for asset in dict.fromkeys(cfg.get("assets") or ["USDT"]):
+            try:
+                methods.update(await env_store.discover_methods(asset, cfg["fiat"]))
+            except Exception:  # sin red en un par, conserva los otros
+                continue
+        return sorted(methods.items(), key=lambda item: item[0].lower())
 
     @app.get("/config", response_class=HTMLResponse)
     async def config_form(
