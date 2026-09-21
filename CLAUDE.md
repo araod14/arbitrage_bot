@@ -75,6 +75,12 @@ Notificadores y repositorios se pasan como **listas** a `MonitorService`, así s
 combinan varios (consola + SQLite + status.json). La config soporta una **lista de
 `WatchTarget`**, de modo que multi-par/multi-fiat no requiere cambios estructurales.
 
+**Multi-cripto**: `ASSETS` (CSV) genera un `WatchTarget` por moneda en
+`main.build_config()`, todas contra el mismo `FIAT`. El catálogo de monedas
+ofrecidas está fijo en `SUPPORTED_ASSETS` (`config.py`) — es catálogo de
+configuración, no dominio: el motor vigila cualquier asset que le llegue en un
+target. `POLL_INTERVAL_S` es por **barrido completo**, no por moneda.
+
 ## Convenciones importantes
 
 - **`Decimal` para todo precio/monto**, nunca `float`. El parseo de la API y los
@@ -88,10 +94,17 @@ combinan varios (consola + SQLite + status.json). La config soporta una **lista 
 
 ### Lógica de arbitraje (`domain/arbitrage.py`)
 
-- "BUY" = anuncios donde **el usuario compra** USDT → mejor = precio **más bajo**.
-- "SELL" = anuncios donde **el usuario vende** USDT → mejor = precio **más alto**.
+- "BUY" = anuncios donde **el usuario compra** la cripto → mejor = precio **más bajo**.
+- "SELL" = anuncios donde **el usuario vende** la cripto → mejor = precio **más alto**.
 - Hay oportunidad si `best_sell > best_buy` y `net_pct ≥ threshold_pct`, con
   `net_pct = spread_pct − fee_buffer_pct`.
+- **El fondo (`WatchTarget.max_fiat`, de `MAX_FIAT`) va en moneda FIAT**, no en
+  unidades de la cripto: es lo único comparable entre monedas (100 tiene sentido
+  en USDT y ninguno en BTC). `accepts_amount` compara ese fondo directamente
+  contra los límites del anuncio (que ya vienen en fiat) y `has_inventory` lo
+  divide por el precio para contrastarlo con `surplusAmount`.
+  `Opportunity.max_usdt` guarda las **unidades** que compra el fondo a ese precio
+  (`max_fiat / buy_price`); conserva el nombre por la columna de SQLite.
 - Se evalúan **pares cruzados** entre métodos de pago (comprar con método A,
   vender con B).
 - `drop_outliers` descarta precios "cebo" que se desvían más de
@@ -138,14 +151,18 @@ por el dashboard corre siempre con `NO_INPUT=true`.
 
 Todo vía `.env` (ver `.env.example`, documentado). `Defaults.from_env()` los carga
 como predeterminados; en modo interactivo cada prompt los ofrece como default.
-`NO_INPUT=true` salta los prompts (cron/Docker). Claves: `ASSET`, `FIAT`,
-`PAY_METHODS`, `MAX_USDT`, `THRESHOLD_PCT`, `FEE_BUFFER_PCT`, `OUTLIER_MAX_DEV_PCT`,
+`NO_INPUT=true` salta los prompts (cron/Docker). Claves: `ASSETS`, `FIAT`,
+`PAY_METHODS`, `MAX_FIAT`, `THRESHOLD_PCT`, `FEE_BUFFER_PCT`, `OUTLIER_MAX_DEV_PCT`,
 `MERCHANT_CHECK`, `POLL_INTERVAL_S`, `DB_PATH`, `LOG_PATH`, `STATUS_PATH`,
 `SCREENSHOTS_DIR`, `SCREENSHOTS`, `IMPERSONATE`, `PROXY`, `BEEP`, `NO_INPUT`,
 `ROWS`, `DASHBOARD_*`, `ENV_PATH`, `BOT_PIDFILE`, `TRADES_DB_PATH`.
 
 `TRADES_DB_PATH` es solo del dashboard: se lee en `web/app.py` (`_paths()`), **no**
 en `Defaults.from_env()`, porque el bot no conoce ese fichero.
+
+`ASSET` (singular) sigue leyéndose como **alias legado** de `ASSETS` para no romper
+los `.env` ya escritos. `MAX_USDT`, en cambio, **ya no se lee**: lo sustituye
+`MAX_FIAT` y un `.env` viejo que lo conserve lo verá ignorado en silencio.
 
 Al añadir una clave nueva: documéntala en `.env.example` **y** léela en
 `Defaults.from_env()`. Ojo, `ROWS` y `BOT_PIDFILE` sí se leen (`config.py`,

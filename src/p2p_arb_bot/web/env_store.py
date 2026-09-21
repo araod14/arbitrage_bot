@@ -13,14 +13,14 @@ import logging
 import os
 from decimal import Decimal
 
-from ..config import Defaults
+from ..config import SUPPORTED_ASSETS, Defaults
 from ..infrastructure.binance_p2p import BinanceP2PSource
 from ..infrastructure.discovery import discover_pay_methods
 
 logger = logging.getLogger(__name__)
 
 #: Claves que el dashboard permite editar (parámetros clave).
-MANAGED_KEYS = ("THRESHOLD_PCT", "MAX_USDT", "PAY_METHODS", "POLL_INTERVAL_S")
+MANAGED_KEYS = ("THRESHOLD_PCT", "MAX_FIAT", "PAY_METHODS", "POLL_INTERVAL_S", "ASSETS")
 
 
 def read_config() -> dict:
@@ -28,10 +28,11 @@ def read_config() -> dict:
     d = Defaults.from_env()
     return {
         "threshold_pct": str(d.threshold_pct),
-        "max_usdt": str(d.max_usdt),
+        "max_fiat": str(d.max_fiat),
         "pay_methods": list(d.pay_methods),
         "poll_interval_s": d.poll_interval_s,
-        "asset": d.asset,
+        "assets": list(d.assets),
+        "supported_assets": list(SUPPORTED_ASSETS),
         "fiat": d.fiat,
     }
 
@@ -40,26 +41,36 @@ def write_config(
     env_path: str,
     *,
     threshold_pct: str,
-    max_usdt: str,
+    max_fiat: str,
     pay_methods: list[str],
     poll_interval_s: int,
+    assets: list[str],
 ) -> None:
     """Actualiza solo las claves gestionadas en ``.env``, preservando el resto.
 
     Valida los numéricos antes de escribir (lanza ``ValueError`` si no parsean).
     """
     threshold = Decimal(threshold_pct)  # valida
-    amount = Decimal(max_usdt)          # valida
+    amount = Decimal(max_fiat)          # valida
     if amount <= 0:
-        raise ValueError("El monto máximo debe ser > 0.")
+        raise ValueError("El fondo disponible debe ser > 0.")
     if int(poll_interval_s) <= 0:
         raise ValueError("El intervalo de polling debe ser > 0.")
 
+    chosen = tuple(dict.fromkeys(a.strip().upper() for a in assets if a.strip()))
+    if not chosen:
+        raise ValueError("Marca al menos una moneda a monitorear.")
+    # El POST podría venir manipulado: solo se aceptan monedas del catálogo.
+    unknown = [a for a in chosen if a not in SUPPORTED_ASSETS]
+    if unknown:
+        raise ValueError(f"Moneda no soportada: {', '.join(unknown)}.")
+
     new_values = {
         "THRESHOLD_PCT": str(threshold),
-        "MAX_USDT": str(amount),
+        "MAX_FIAT": str(amount),
         "PAY_METHODS": ",".join(m.strip() for m in pay_methods if m.strip()),
         "POLL_INTERVAL_S": str(int(poll_interval_s)),
+        "ASSETS": ",".join(chosen),
     }
 
     lines: list[str] = []

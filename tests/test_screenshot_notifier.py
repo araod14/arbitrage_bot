@@ -57,7 +57,7 @@ def test_heartbeat_es_noop(tmp_path):
     notifier = ScreenshotNotifier(str(tmp_path))
     target = WatchTarget(
         asset="USDT", fiat="VES", pay_methods=(),
-        max_usdt=Decimal("100"), threshold_pct=Decimal("1"),
+        max_fiat=Decimal("80000"), threshold_pct=Decimal("1"),
     )
     asyncio.run(notifier.notify_heartbeat(target, Decimal("1.0")))
     assert list(tmp_path.iterdir()) == []

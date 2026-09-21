@@ -30,7 +30,7 @@
         <td>{{ o.sell_price }}<div class="muted small">{{ o.sell_pay_method }}</div></td>
         <td class="num pos">{{ '%.3f'|format(o.net_pct) }}%</td>
         <td class="num">{{ '%.3f'|format(o.spread_pct) }}%</td>
-        <td class="num">~{{ '%.2f'|format(o.est_profit_usdt|float) }}</td>
+        <td class="num">~{{ o.est_profit_usdt|unidades }} {{ o.asset }}</td>
         <td class="num">
           {% if o.feasible %}
           ~{{ o.usable_fiat_buy|miles }} <span class="muted small">{{ o.fiat }}</span>

@@ -22,9 +22,9 @@
       <input type="text" name="real_sell_price" inputmode="decimal"
              value="{{ opp.sell_price if opp else '' }}">
     </label>
-    <label>USDT movidos
+    <label>{{ opp.asset if opp else 'Cripto' }} movidos
       <input type="text" name="real_usdt" inputmode="decimal"
-             value="{{ '%.2f'|format(opp.usable_usdt) if opp and opp.feasible else '' }}">
+             value="{{ opp.usable_usdt|unidades if opp and opp.feasible else '' }}">
     </label>
     <label>{{ opp.fiat if opp else 'Fiat' }} pagados al comprar
       <input type="text" name="real_fiat_buy" inputmode="decimal" required

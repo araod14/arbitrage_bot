@@ -4,7 +4,8 @@
 <div class="card narrow">
   <h2>Configuración del bot</h2>
   <p class="muted small">
-    Par actual: <strong>{{ cfg.asset }}/{{ cfg.fiat }}</strong>.
+    Pares vigilados:
+    {% for a in cfg.assets %}<strong>{{ a }}/{{ cfg.fiat }}</strong>{{ ', ' if not loop.last }}{% endfor %}.
     Al guardar, si el bot está corriendo se reinicia para aplicar los cambios.
   </p>
   {% if message %}<p class="alert ok">{{ message }}</p>{% endif %}
@@ -15,13 +16,30 @@
       <input type="text" name="threshold_pct" value="{{ cfg.threshold_pct }}" required>
     </label>
 
-    <label>Monto máximo (USDT)
-      <input type="text" name="max_usdt" value="{{ cfg.max_usdt }}" required>
+    <label>Fondo disponible ({{ cfg.fiat }})
+      <input type="text" name="max_fiat" value="{{ cfg.max_fiat }}" required>
     </label>
 
     <label>Intervalo de polling (s)
       <input type="number" name="poll_interval_s" min="1" value="{{ cfg.poll_interval_s }}" required>
     </label>
+
+    <fieldset>
+      <legend>Monedas a monitorear</legend>
+      <div class="methods">
+        {% for a in cfg.supported_assets %}
+        <label class="check">
+          <input type="checkbox" name="assets" value="{{ a }}"
+                 {{ 'checked' if a in selected_assets }}>
+          {{ a }}
+        </label>
+        {% endfor %}
+      </div>
+      <p class="muted small">
+        Cada moneda añade dos consultas por barrido: marcar muchas aumenta el
+        riesgo de que Binance limite las peticiones.
+      </p>
+    </fieldset>
 
     <fieldset>
       <legend>Métodos de pago <span class="muted small">(ninguno = todos)</span></legend>

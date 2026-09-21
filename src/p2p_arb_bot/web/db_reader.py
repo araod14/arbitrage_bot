@@ -146,7 +146,8 @@ def stats_24h(db_path: str) -> dict:
     empty = {
         "count_24h": 0,
         "best_net_pct": None,
-        "total_profit_usdt": 0.0,
+        "total_profit_fiat": 0.0,
+        "fiat": "",
         "last_detection": None,
         "last_detection_local": "",
     }
@@ -157,9 +158,16 @@ def stats_24h(db_path: str) -> dict:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         cur = conn.execute(
             """
-            SELECT COUNT(*)                     AS count_24h,
-                   MAX(net_pct)                 AS best_net_pct,
-                   COALESCE(SUM(CAST(est_profit_usdt AS REAL)), 0) AS total_profit
+            SELECT COUNT(*)     AS count_24h,
+                   MAX(net_pct) AS best_net_pct,
+                   MAX(fiat)    AS fiat,
+                   -- est_profit_usdt está en UNIDADES del asset, y con varias
+                   -- criptos sumarlas mezclaría BTC con USDT. Multiplicando por el
+                   -- precio de compra queda todo en fiat, que sí es comparable.
+                   -- No hace falta columna nueva: ambas ya se persisten, así que
+                   -- vale también para las filas históricas.
+                   COALESCE(SUM(CAST(est_profit_usdt AS REAL)
+                                * CAST(buy_price AS REAL)), 0) AS total_profit
             FROM opportunities
             WHERE detected_at >= ?
             """,
@@ -173,7 +181,9 @@ def stats_24h(db_path: str) -> dict:
         return {
             "count_24h": row["count_24h"] or 0,
             "best_net_pct": row["best_net_pct"],
-            "total_profit_usdt": round(row["total_profit"] or 0.0, 2),
+            "total_profit_fiat": round(row["total_profit"] or 0.0, 2),
+            # El fiat es único por diseño, así que MAX() da el de todas las filas.
+            "fiat": row["fiat"] or "",
             "last_detection": last_iso,
             "last_detection_local": to_local(last_iso),
         }

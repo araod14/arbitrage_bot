@@ -20,7 +20,7 @@ from starlette.testclient import TestClient
 
 from p2p_arb_bot.domain.models import Opportunity
 from p2p_arb_bot.infrastructure.sqlite_repo import SQLiteRepository
-from p2p_arb_bot.web import trade_store
+from p2p_arb_bot.web import env_store, trade_store
 from p2p_arb_bot.web.app import create_app
 
 PASSWORD = "secreto-de-test"
@@ -134,6 +134,65 @@ def test_trades_are_not_leaked_to_anonymous_dashboard(client, env):
     assert "Mis operaciones" not in body
     assert "nota-privada" not in body
     assert "vend-privado" not in body
+
+
+# --- configuración -----------------------------------------------------------
+
+@pytest.fixture
+def sin_red(monkeypatch):
+    """Evita que /config sondee Binance de verdad al descubrir métodos de pago."""
+    async def _vacio(asset, fiat, **_kw):
+        return []
+
+    monkeypatch.setattr(env_store, "discover_methods", _vacio)
+
+
+@pytest.fixture
+def env_limpio(monkeypatch):
+    """Aísla las claves que write_config vuelca en os.environ.
+
+    ``write_config`` hace ``os.environ.update`` a propósito (el bot hereda el
+    entorno del dashboard), así que sin esto un test filtraría su config a los
+    siguientes. monkeypatch las restaura al terminar.
+    """
+    for key in ("ASSETS", "MAX_FIAT", "THRESHOLD_PCT", "PAY_METHODS", "POLL_INTERVAL_S"):
+        monkeypatch.setenv(key, "")
+
+
+def test_config_form_lista_las_monedas(authed, sin_red):
+    body = authed.get("/config").text
+    assert 'name="assets"' in body
+    assert "BTC" in body
+    assert "Monedas a monitorear" in body
+
+
+def test_config_guarda_varias_monedas(authed, env, sin_red, env_limpio):
+    r = authed.post(
+        "/config",
+        data={
+            "threshold_pct": "1.5",
+            "max_fiat": "80000",
+            "poll_interval_s": "30",
+            "assets": ["USDT", "BTC"],
+        },
+    )
+    assert r.status_code == 200
+    assert "Configuración guardada" in r.text
+    lineas = (env / "empty.env").read_text(encoding="utf-8").splitlines()
+    assert "ASSETS=USDT,BTC" in lineas
+    assert "MAX_FIAT=80000" in lineas
+
+
+def test_config_sin_monedas_muestra_error(authed, env, sin_red, env_limpio):
+    r = authed.post(
+        "/config",
+        data={"threshold_pct": "1.5", "max_fiat": "80000", "poll_interval_s": "30"},
+    )
+    assert r.status_code == 200
+    assert "No se pudo guardar" in r.text
+    assert "al menos una moneda" in r.text
+    # Y no escribió nada en el .env.
+    assert "ASSETS=" not in (env / "empty.env").read_text(encoding="utf-8")
 
 
 # --- login -------------------------------------------------------------------
@@ -254,3 +313,36 @@ def test_unknown_status_is_not_trusted(authed):
     r = _post_completed(authed, status="cualquier-cosa")
     assert r.status_code == 200
     assert "cerrada" in r.text
+
+
+def test_profit_btc_conserva_precision_y_unidad(client, env):
+    import sqlite3
+
+    _seed_opportunity(str(env / "opps.db"))
+    with sqlite3.connect(env / "opps.db") as conn:
+        conn.execute("UPDATE opportunities SET asset = 'BTC', est_profit_usdt = '0.000002'")
+    response = client.get("/partials/opportunities")
+    assert response.status_code == 200
+    assert "~0.000002 BTC" in response.text
+
+
+@pytest.mark.parametrize("falla_primera", [False, True])
+def test_config_combina_metodos_de_todas_las_monedas(authed, monkeypatch, falla_primera):
+    monkeypatch.setenv("ASSETS", "USDT,BTC")
+    calls = []
+
+    async def discover(asset, fiat):
+        calls.append(asset)
+        if asset == "USDT":
+            if falla_primera:
+                raise TimeoutError("sin respuesta")
+            return [("PagoMovil", "PagoMovil"), ("Banesco", "Banesco")]
+        return [("Banesco", "Banesco"), ("Mercantil", "Mercantil")]
+
+    monkeypatch.setattr(env_store, "discover_methods", discover)
+    response = authed.get("/config")
+    assert response.status_code == 200
+    assert calls == ["USDT", "BTC"]
+    assert response.text.count('value="Banesco"') == 1
+    assert 'value="Mercantil"' in response.text
+    assert ('value="PagoMovil"' in response.text) == (not falla_primera)

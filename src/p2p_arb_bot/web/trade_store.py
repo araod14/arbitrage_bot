@@ -199,7 +199,12 @@ def summary(db_path: str) -> dict:
         "failed": len(failed),
         # De lo que intentaste registrar, qué fracción cerraste.
         "hit_rate": (len(done) / total * 100) if total else None,
-        "profit_usdt": sum(t.get("profit_usdt", 0.0) for t in done),
+        # En fiat, no en unidades del asset: con varias criptos registradas, sumar
+        # BTC con USDT no significa nada. profit_fiat sale además de los montos
+        # reales del banco, que es el dato más fiable de los dos.
+        "profit_fiat": sum(t.get("profit_fiat", 0.0) for t in done),
+        # Etiqueta de la moneda del total (el fiat es único por diseño).
+        "fiat": next((t["fiat"] for t in trades if t.get("fiat")), ""),
         "avg_net_pct": (sum(t["net_pct"] for t in done) / len(done)) if done else None,
         # Media de cuánto se desvió lo real de lo estimado (negativo = el bot
         # promete más de lo que la realidad entrega).
