@@ -5,7 +5,7 @@
   </div>
 
   <div class="card kpi">
-    <span class="kpi-label">Mejor spread neto actual</span>
+    <span class="kpi-label">Último margen observado</span>
     {% if status and status.best_net_pct is not none %}
       <span class="kpi-value {{ 'pos' if status.best_net_pct >= 0 else 'neg' }}">
         {{ '%.3f'|format(status.best_net_pct) }}%
@@ -26,10 +26,10 @@
   </div>
 
   <div class="card kpi">
-    <span class="kpi-label">Profit estimado (24 h)</span>
+    <span class="kpi-label">Ganancia estimada (24 h)</span>
     <span class="kpi-value pos">~{{ '%.2f'|format(stats.total_profit_fiat) }} {{ stats.fiat }}</span>
     <span class="muted small">
-      {% if stats.last_detection %}última: {{ stats.last_detection_local }}{% else %}—{% endif %}
+      {% if stats.last_detection %}detecciones, no operaciones · {{ stats.last_detection_local }}{% else %}—{% endif %}
     </span>
   </div>
 </div>

@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Login · P2P Arb{% endblock %}
 {% block content %}
-<div class="card narrow">
+<div class="card narrow login-card">
+  <p class="eyebrow">TU ESPACIO DE TRABAJO</p>
   <h2>Iniciar sesión</h2>
-  <p class="muted small">Necesario solo para controlar y configurar el bot. La supervisión es pública.</p>
+  <p class="muted small">Accede al registro privado de operaciones y a los controles del monitor. Puedes consultar oportunidades sin iniciar sesión.</p>
   {% if error %}<p class="alert error">{{ error }}</p>{% endif %}
   {% if not configured %}
     <p class="alert error">Falta definir <code>DASHBOARD_PASSWORD</code> en el servidor.</p>
   {% endif %}
   <form action="/login" method="post" class="form">
     <label>Contraseña
-      <input type="password" name="password" autofocus required>
+      <input type="password" name="password" autocomplete="current-password" autofocus required>
     </label>
     <button class="btn primary" type="submit">Entrar</button>
   </form>

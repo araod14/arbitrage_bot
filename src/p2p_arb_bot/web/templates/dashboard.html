@@ -4,10 +4,11 @@
    en la tarjeta de oportunidades quedaba abajo del todo y pasaba desapercibido.
    notify.js lo activa al cargar si el contexto es seguro. #}
 {% block topbar_extra %}
-<button class="navlink notify-btn" type="button" id="notify-toggle" disabled>🔔 Activar avisos</button>
+<button class="navlink notify-btn" type="button" id="notify-toggle" disabled>Activar avisos</button>
 {% endblock %}
 
 {% block content %}
+<div class="page-heading"><div><p class="eyebrow">BINANCE P2P · MONITOREO</p><h1>Encuentra tu próxima oportunidad</h1><p class="muted">Compara precios, evalúa el margen y registra tus resultados.</p></div><span class="live-label"><span aria-hidden="true">●</span> Actualización automática</span></div>
 
 <section id="status-panel"
          hx-get="/partials/status"
@@ -18,8 +19,8 @@
 
 <section class="card">
   <div class="card-head">
-    <h2>Monto a usar en la operación</h2>
-    <span class="muted small">última oportunidad · cada 8 s</span>
+    <h2>Última oportunidad detectada</h2>
+    <span class="muted small">Estimación al detectar · confirma los anuncios antes de operar</span>
   </div>
   <div id="trade-amount"
        hx-get="/partials/trade-amount"
@@ -32,7 +33,7 @@
 
 <section class="card">
   <div class="card-head">
-    <h2>Oportunidades recientes</h2>
+    <h2 id="opportunities-heading" tabindex="-1">Oportunidades recientes</h2>
     <div class="card-head-actions">
       <span class="muted small">se actualiza cada 8 s</span>
       {% if authed %}
@@ -60,7 +61,7 @@
     <h2>Mis operaciones</h2>
     <span class="muted small">lo que ejecutaste de verdad · estimado vs. real</span>
   </div>
-  <div id="trade-form"></div>
+
   <div id="trades"
        hx-get="/partials/trades"
        hx-trigger="load"
@@ -68,17 +69,21 @@
 </section>
 {% endif %}
 
-<section class="card">
-  <div class="card-head">
-    <h2>Log del bot</h2>
-    <span class="muted small">últimas líneas · cada 5 s</span>
-  </div>
+<details class="card log-panel">
+  <summary>Actividad del monitor <span class="muted small">Consultar log del bot</span></summary>
   <div id="log"
        hx-get="/partials/log"
        hx-trigger="every 5s"
        hx-swap="innerHTML">
     {% include "partials/log.html" %}
   </div>
-</section>
-
+</details>
+{% if authed %}
+<dialog id="trade-dialog" aria-labelledby="dialog-title">
+  <div class="dialog-head"><div><p class="eyebrow">REGISTRO PRIVADO</p><h2 id="dialog-title">Tu operación</h2></div><button type="button" class="btn" data-close-dialog aria-label="Cerrar formulario">Cerrar ×</button></div>
+  <p id="dialog-error" class="alert error" role="alert" hidden></p>
+  <div id="trade-form"></div>
+</dialog>
+{% endif %}
+<p id="ui-feedback" class="ui-feedback" role="status" hidden></p>
 {% endblock %}
