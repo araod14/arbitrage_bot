@@ -1,20 +1,22 @@
-<section class="card" aria-labelledby="config-summary-heading">
-  <div class="card-head">
+<section class="card monitor-config" aria-labelledby="config-summary-heading">
+  <div class="card-head monitor-config-head">
     <h2 id="config-summary-heading">Configuración actual</h2>
-    {% if authed %}<a class="btn" href="/config">Editar configuración</a>{% endif %}
+    {% if authed %}<a class="config-edit" href="/config">Editar configuración</a>{% endif %}
   </div>
   <dl class="config-summary">
     <div>
       <dt class="muted small">Monedas</dt>
-      <dd>{% for asset in cfg.assets %}{{ asset }}/{{ cfg.fiat }}{{ ', ' if not loop.last }}{% endfor %}</dd>
+      <dd class="config-tags">{% for asset in cfg.assets %}<span class="config-tag config-tag-asset">{{ asset }}/{{ cfg.fiat }}</span>{% endfor %}</dd>
     </div>
     <div>
       <dt class="muted small">Bancos / métodos de pago</dt>
-      <dd>{{ cfg.pay_methods|join(', ') if cfg.pay_methods else 'Todos los métodos de pago' }}</dd>
+      <dd class="config-tags">
+        {% for method in cfg.pay_methods %}<span class="config-tag">{{ method }}</span>{% else %}<span class="config-tag">Todos los métodos de pago</span>{% endfor %}
+      </dd>
     </div>
-    <div>
+    <div class="config-budget">
       <dt class="muted small">Fondo disponible</dt>
-      <dd>{{ cfg.max_fiat }} {{ cfg.fiat }}<span class="muted small">Se evalúa completo para cada oportunidad.</span></dd>
+      <dd><strong class="config-amount">{{ cfg.max_fiat }} <span class="config-currency">{{ cfg.fiat }}</span></strong><span class="config-budget-note">Se evalúa completo para cada oportunidad.</span></dd>
     </div>
   </dl>
 </section>

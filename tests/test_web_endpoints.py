@@ -105,9 +105,9 @@ def test_resumen_publico_muestra_configuracion_con_bot_detenido(client, monkeypa
     monkeypatch.setenv("MAX_FIAT", "12345.67")
     body = client.get(route).text
     assert "Configuración actual" in body
-    assert "USDT/VES, BTC/VES" in body
-    assert "Banesco, PagoMovil" in body
-    assert "12345.67 VES" in body
+    assert "USDT/VES</span>" in body and "BTC/VES</span>" in body
+    assert "Banesco</span>" in body and "PagoMovil</span>" in body
+    assert '12345.67 <span class="config-currency">VES</span>' in body
     assert "Se evalúa completo para cada oportunidad." in body
     assert "Editar configuración" not in body
 
