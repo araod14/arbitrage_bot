@@ -97,6 +97,35 @@ def test_dashboard_renders_with_empty_db(client):
     assert "Aún no se han registrado oportunidades" in r.text
 
 
+@pytest.mark.parametrize("route", ["/", "/partials/status"])
+def test_resumen_publico_muestra_configuracion_con_bot_detenido(client, monkeypatch, route):
+    monkeypatch.setenv("ASSETS", "USDT,BTC")
+    monkeypatch.setenv("FIAT", "VES")
+    monkeypatch.setenv("PAY_METHODS", "Banesco,PagoMovil")
+    monkeypatch.setenv("MAX_FIAT", "12345.67")
+    body = client.get(route).text
+    assert "Configuración actual" in body
+    assert "USDT/VES, BTC/VES" in body
+    assert "Banesco, PagoMovil" in body
+    assert "12345.67 VES" in body
+    assert "Se evalúa completo para cada oportunidad." in body
+    assert "Editar configuración" not in body
+
+
+@pytest.mark.parametrize("route", ["/", "/partials/status"])
+def test_resumen_sin_filtro_de_bancos_y_enlace_privado(authed, monkeypatch, route):
+    monkeypatch.setenv("PAY_METHODS", "")
+    body = authed.get(route).text
+    assert "Todos los métodos de pago" in body
+    assert 'href="/config">Editar configuración</a>' in body
+
+
+def test_dashboard_explica_funcion_del_bot(client):
+    body = client.get("/").text
+    assert "Monitorea precios de compra y venta en Binance P2P" in body
+    assert "No ejecuta operaciones." in body
+
+
 # --- rutas protegidas --------------------------------------------------------
 
 PROTECTED_GET = ["/partials/trades", "/trades/new?opp_id=1", "/trades/fail?opp_id=1", "/config"]
@@ -167,6 +196,8 @@ def test_config_form_lista_las_monedas(authed, sin_red):
 
 
 def test_config_guarda_varias_monedas(authed, env, sin_red, env_limpio):
+    before = authed.get("/partials/status").text
+    assert "80000" not in before
     r = authed.post(
         "/config",
         data={
@@ -181,6 +212,9 @@ def test_config_guarda_varias_monedas(authed, env, sin_red, env_limpio):
     lineas = (env / "empty.env").read_text(encoding="utf-8").splitlines()
     assert "ASSETS=USDT,BTC" in lineas
     assert "MAX_FIAT=80000" in lineas
+    body = authed.get("/partials/status").text
+    assert "80000" in body
+    assert "USDT/" in body and "BTC/" in body
 
 
 def test_config_sin_monedas_muestra_error(authed, env, sin_red, env_limpio):

@@ -62,6 +62,11 @@ body {
 .card-head h2 { margin: 0; font-size: 1rem; }
 .card-head-actions { display: flex; align-items: center; gap: .6rem; }
 
+.config-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 0; }
+.config-summary dd { margin: .3rem 0 0; overflow-wrap: anywhere; }
+.config-summary dd span { display: block; margin-top: .3rem; }
+@media (max-width: 767px) { .config-summary { grid-template-columns: 1fr; } }
+
 .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.2rem; }
 .kpi { display: flex; flex-direction: column; gap: .35rem; margin: 0; }
 .kpi-label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }

@@ -106,6 +106,7 @@ def create_app() -> FastAPI:
             "request": request,
             "authed": auth.is_authed(request),
             "bot": _bot_view(),
+            "cfg": env_store.read_config(),
             "stats": db_reader.stats_24h(p["db_path"]),
             "status": db_reader.read_status(p["status_path"]),
             "opportunities": db_reader.recent_opportunities(p["db_path"], limit=50),
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
             "request": request,
             "authed": auth.is_authed(request),
             "bot": _bot_view(),
+            "cfg": env_store.read_config(),
             "stats": db_reader.stats_24h(p["db_path"]),
             "status": db_reader.read_status(p["status_path"]),
         }

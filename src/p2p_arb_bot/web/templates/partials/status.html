@@ -1,3 +1,24 @@
+<section class="card" aria-labelledby="config-summary-heading">
+  <div class="card-head">
+    <h2 id="config-summary-heading">Configuración actual</h2>
+    {% if authed %}<a class="btn" href="/config">Editar configuración</a>{% endif %}
+  </div>
+  <dl class="config-summary">
+    <div>
+      <dt class="muted small">Monedas</dt>
+      <dd>{% for asset in cfg.assets %}{{ asset }}/{{ cfg.fiat }}{{ ', ' if not loop.last }}{% endfor %}</dd>
+    </div>
+    <div>
+      <dt class="muted small">Bancos / métodos de pago</dt>
+      <dd>{{ cfg.pay_methods|join(', ') if cfg.pay_methods else 'Todos los métodos de pago' }}</dd>
+    </div>
+    <div>
+      <dt class="muted small">Fondo disponible</dt>
+      <dd>{{ cfg.max_fiat }} {{ cfg.fiat }}<span class="muted small">Se evalúa completo para cada oportunidad.</span></dd>
+    </div>
+  </dl>
+</section>
+
 <div class="status-grid">
   <div class="card kpi">
     <span class="kpi-label">Estado del bot</span>
