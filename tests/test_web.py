@@ -210,6 +210,7 @@ def test_stats_24h(tmp_path):
     assert stats["best_net_pct"] == 3.0
     # 1.5 unidades * 36 VES de precio de compra, por 3 filas.
     assert stats["total_profit_fiat"] == 162.0
+    assert stats["total_profit_usd"] == Decimal("4.5")
     assert stats["fiat"] == "VES"
     assert stats["last_detection"] is not None
 
@@ -218,6 +219,52 @@ def test_stats_24h_missing_db(tmp_path):
     stats = db_reader.stats_24h(str(tmp_path / "nope.db"))
     assert stats["count_24h"] == 0
     assert stats["best_net_pct"] is None
+    assert stats["total_profit_usd"] == 0
+
+
+def test_ganancias_usd_multicripto_usan_ultima_tasa_valida(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "opps.db"
+    _seed_db(str(db), net_pcts=[1.0, 2.0, 3.0, 4.0, 5.0])
+    with sqlite3.connect(db) as conn:
+        # La fila más reciente no es una tasa válida. El desempate es por id.
+        conn.execute("UPDATE opportunities SET buy_price = '0' WHERE id = 1")
+        conn.execute("UPDATE opportunities SET buy_price = 'NaN' WHERE id = 2")
+        conn.execute("UPDATE opportunities SET buy_price = '40' WHERE id = 3")
+        conn.execute("UPDATE opportunities SET buy_price = '50' WHERE id = 4")
+        conn.execute("UPDATE opportunities SET detected_at = (SELECT detected_at FROM opportunities WHERE id = 3) WHERE id = 4")
+        conn.execute("UPDATE opportunities SET asset = 'BTC', buy_price = '3000000', est_profit_usdt = '0.000002' WHERE id = 5")
+    btc = next(row for row in db_reader.recent_opportunities(str(db)) if row["asset"] == "BTC")
+    assert btc["est_profit_usd"] == Decimal("0.12")
+    assert db_reader.stats_24h(str(db))["total_profit_usd"] == Decimal("6.12")
+
+
+def test_ganancias_usd_sin_tasa_del_mismo_fiat(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "opps.db"
+    _seed_db(str(db), net_pcts=[1.0, 2.0])
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE opportunities SET asset = 'BTC' WHERE id = 1")
+        conn.execute("UPDATE opportunities SET fiat = 'COP' WHERE id = 2")
+    assert db_reader.recent_opportunities(str(db), limit=1)[0]["est_profit_usd"] is None
+    assert db_reader.stats_24h(str(db))["total_profit_usd"] is None
+
+
+def test_ganancias_usd_tasa_historica_y_suma_sin_redondeo(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "opps.db"
+    _seed_db(str(db), net_pcts=[1.0, 2.0, 3.0])
+    old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE opportunities SET asset = 'BTC', buy_price = '36', est_profit_usdt = '0.004' WHERE id IN (1, 2)")
+        conn.execute("UPDATE opportunities SET detected_at = ? WHERE id = 3", (old,))
+    stats = db_reader.stats_24h(str(db))
+    assert stats["count_24h"] == 2
+    assert stats["total_profit_usd"] == Decimal("0.008")
+    assert db_reader.recent_opportunities(str(db), limit=1)[0]["est_profit_usd"] == Decimal("0.004")
 
 
 def test_recent_opportunities(tmp_path):
@@ -277,6 +324,8 @@ def test_recent_opportunities_degrades_on_old_schema(tmp_path):
     # que la plantilla del dashboard no falle al renderizarlas.
     assert row["buy_min_amount"] == 0.0
     assert row["sell_min_amount"] == 0.0
+    assert row["est_profit_usd"] == 0
+    assert db_reader.stats_24h(str(db))["total_profit_usd"] == 0
 
 
 def test_migration_adds_limit_columns(tmp_path):

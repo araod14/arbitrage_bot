@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 def _dec(value: object) -> Decimal:
     """Convierte un valor de la DB a Decimal de forma segura (0 si no se puede)."""
     try:
-        return Decimal(str(value))
+        number = Decimal(str(value))
+        return number if number.is_finite() else Decimal("0")
     except (InvalidOperation, ValueError, TypeError):
         return Decimal("0")
 
@@ -113,6 +114,33 @@ def _existing_columns(conn: sqlite3.Connection) -> set[str]:
     return {row[1] for row in conn.execute("PRAGMA table_info(opportunities)")}
 
 
+def _usd_rates(conn: sqlite3.Connection) -> dict[str, Decimal]:
+    """Último precio de compra USDT válido por fiat, incluso fuera de las 24 h."""
+    rates: dict[str, Decimal] = {}
+    for row in conn.execute(
+        "SELECT fiat, buy_price FROM opportunities WHERE asset = 'USDT' "
+        "ORDER BY detected_at DESC, id DESC"
+    ):
+        price = _dec(row["buy_price"])
+        if price.is_finite() and price > 0:
+            rates.setdefault(row["fiat"], price)
+    return rates
+
+
+def _profit_usd(row: dict, rates: dict[str, Decimal]) -> Decimal | None:
+    """Convierte la ganancia a dólares aproximando 1 USDT a 1 USD."""
+    profit = _dec(row["est_profit_usdt"])
+    if not profit.is_finite():
+        return None
+    if row["asset"] == "USDT":
+        return profit
+    price = _dec(row["buy_price"])
+    rate = rates.get(row["fiat"])
+    if rate is None or not price.is_finite() or price <= 0:
+        return None
+    return profit * price / rate
+
+
 def recent_opportunities(db_path: str, limit: int = 50) -> list[dict]:
     """Últimas oportunidades detectadas, más recientes primero."""
     conn = _connect_ro(db_path)
@@ -130,7 +158,9 @@ def recent_opportunities(db_path: str, limit: int = 50) -> list[dict]:
             (limit,),
         )
         rows = [dict(row) for row in cur.fetchall()]
+        rates = _usd_rates(conn)
         for row in rows:
+            row["est_profit_usd"] = _profit_usd(row, rates)
             row["detected_local"] = to_local(row.get("detected_at"))
             _add_sizing(row)
         return rows
@@ -147,6 +177,7 @@ def stats_24h(db_path: str) -> dict:
         "count_24h": 0,
         "best_net_pct": None,
         "total_profit_fiat": 0.0,
+        "total_profit_usd": Decimal("0"),
         "fiat": "",
         "last_detection": None,
         "last_detection_local": "",
@@ -156,34 +187,35 @@ def stats_24h(db_path: str) -> dict:
         return empty
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        cur = conn.execute(
+        rows = [dict(row) for row in conn.execute(
             """
-            SELECT COUNT(*)     AS count_24h,
-                   MAX(net_pct) AS best_net_pct,
-                   MAX(fiat)    AS fiat,
-                   -- est_profit_usdt está en UNIDADES del asset, y con varias
-                   -- criptos sumarlas mezclaría BTC con USDT. Multiplicando por el
-                   -- precio de compra queda todo en fiat, que sí es comparable.
-                   -- No hace falta columna nueva: ambas ya se persisten, así que
-                   -- vale también para las filas históricas.
-                   COALESCE(SUM(CAST(est_profit_usdt AS REAL)
-                                * CAST(buy_price AS REAL)), 0) AS total_profit
+            SELECT asset, fiat, net_pct, est_profit_usdt, buy_price
             FROM opportunities
             WHERE detected_at >= ?
             """,
             (cutoff,),
+        )]
+        rates = _usd_rates(conn)
+        profits_usd = [_profit_usd(row, rates) for row in rows]
+        total_usd = (
+            sum(profits_usd, Decimal("0"))
+            if all(profit is not None for profit in profits_usd) else None
         )
-        row = cur.fetchone()
+        # Las unidades de distintas criptos solo se suman tras convertir a fiat.
+        total_fiat = sum(
+            (_dec(row["est_profit_usdt"]) * _dec(row["buy_price"]) for row in rows),
+            Decimal("0"),
+        )
         last = conn.execute(
             "SELECT MAX(detected_at) AS last FROM opportunities"
         ).fetchone()
         last_iso = last["last"] if last else None
         return {
-            "count_24h": row["count_24h"] or 0,
-            "best_net_pct": row["best_net_pct"],
-            "total_profit_fiat": round(row["total_profit"] or 0.0, 2),
-            # El fiat es único por diseño, así que MAX() da el de todas las filas.
-            "fiat": row["fiat"] or "",
+            "count_24h": len(rows),
+            "best_net_pct": max((row["net_pct"] for row in rows), default=None),
+            "total_profit_fiat": round(total_fiat, 2),
+            "total_profit_usd": total_usd,
+            "fiat": max((row["fiat"] for row in rows), default=""),
             "last_detection": last_iso,
             "last_detection_local": to_local(last_iso),
         }

@@ -273,7 +273,8 @@ body:has(#trade-dialog[open]) { overflow:hidden; }
  #opportunities td[data-label="Par"] { order:0; font-size:1rem; font-weight:700; }
  #opportunities td[data-label="Neto"] { order:1; font-size:1rem; font-weight:700; }
  #opportunities td[data-label="Ganancia est."] { order:2; }
- #opportunities td[data-label="Monto a usar"] { order:3; }
+ #opportunities td[data-label="Ganancia est. (USD)"] { order:3; }
+ #opportunities td[data-label="Monto a usar"] { order:4; }
  #opportunities td[data-label^="Detectada"] { order:15; }
  #opportunities td.col-actions { order:20; }
  table.data a,.trade-foot a { display:inline-flex; align-items:center; min-height:44px; }

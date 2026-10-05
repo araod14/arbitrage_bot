@@ -10,6 +10,7 @@
         <th class="num">Neto</th>
         <th class="num">Spread</th>
         <th class="num">Ganancia est.</th>
+        <th class="num" title="1 USDT ≈ 1 USD; otras criptos usan el último precio de compra USDT registrado para el mismo fiat.">Ganancia est. (USD)</th>
         <th class="num">Monto a usar</th>
         <th>Publicaciones</th>
         {% if authed %}<th class="col-actions">Registro</th>{% endif %}
@@ -31,6 +32,7 @@
         <td data-label="Neto" class="num pos">{{ '%.3f'|format(o.net_pct) }}%</td>
         <td data-label="Spread" class="num">{{ '%.3f'|format(o.spread_pct) }}%</td>
         <td data-label="Ganancia est." class="num">~{{ o.est_profit_usdt|unidades }} {{ o.asset }}</td>
+        <td data-label="Ganancia est. (USD)" class="num">{% if o.est_profit_usd is not none %}~{{ '%.2f'|format(o.est_profit_usd) }} USD{% else %}— USD{% endif %}</td>
         <td data-label="Monto a usar" class="num">
           {% if o.feasible %}
           ~{{ o.usable_fiat_buy|miles }} <span class="muted small">{{ o.fiat }}</span>

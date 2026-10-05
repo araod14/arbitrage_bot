@@ -358,6 +358,31 @@ def test_profit_btc_conserva_precision_y_unidad(client, env):
     response = client.get("/partials/opportunities")
     assert response.status_code == 200
     assert "~0.000002 BTC" in response.text
+    assert "— USD" in response.text
+    assert "/ — USD" in client.get("/partials/status").text
+
+
+@pytest.mark.parametrize("con_sesion", [False, True])
+def test_dashboard_muestra_ganancias_usd(client, env, con_sesion):
+    _seed_opportunity(str(env / "opps.db"))
+    if con_sesion:
+        client.post("/login", data={"password": PASSWORD})
+    for path in ("/", "/partials/opportunities"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert 'data-label="Ganancia est. (USD)"' in response.text
+        assert "~2.77 USD" in response.text
+        assert response.text.index('data-label="Ganancia est."') < response.text.index('data-label="Ganancia est. (USD)"')
+    for path in ("/", "/partials/status"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "~99.72 VES / ~2.77 USD" in response.text
+
+
+def test_ganancia_usd_vacia(client):
+    response = client.get("/partials/status")
+    assert response.status_code == 200
+    assert "/ ~0.00 USD" in response.text
 
 
 @pytest.mark.parametrize("falla_primera", [False, True])
