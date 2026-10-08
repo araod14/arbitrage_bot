@@ -9,6 +9,7 @@ hace triviales los fakes en tests.
 from __future__ import annotations
 
 from decimal import Decimal
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from ..domain.models import Ad, Opportunity, TradeType, WatchTarget
@@ -63,3 +64,19 @@ class Notifier(Protocol):
     async def notify_heartbeat(
         self, target: WatchTarget, best_spread: Decimal | None
     ) -> None: ...
+
+
+class MarketObserver(Protocol):
+    """Observaciones independientes de los avisos deduplicados."""
+
+    def record(self, target: WatchTarget, buys: list[Ad], sells: list[Ad], now: datetime) -> None: ...
+
+    def failed(self, target: WatchTarget, now: datetime) -> None: ...
+
+
+class RevalidationQueue(Protocol):
+    """Cola privada entre procesos; ningún caso de uso conoce SQLite."""
+
+    def claim(self) -> dict | None: ...
+
+    def finish(self, request: dict, result: dict, *, error: bool = False) -> None: ...
