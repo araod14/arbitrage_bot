@@ -5,7 +5,7 @@
     <span class="kpi-value">{{ summary.total }}</span>
   </div>
   <div class="card kpi">
-    <span class="kpi-label">Cerradas</span>
+    <span class="kpi-label">Cerradas (de los intentos registrados)</span>
     <span class="kpi-value">{{ summary.completed }}
       {% if summary.hit_rate is not none %}
       <span class="muted small">({{ '%.0f'|format(summary.hit_rate) }}%)</span>
@@ -56,7 +56,7 @@
           <div class="muted small">{{ t.failure_label }}</div>
           {% endif %}
         </td>
-        <td data-label="Par">{{ t.asset }}/{{ t.fiat }}<div class="muted small">{{ t.detected_local or '' }}</div></td>
+        <td data-label="Par">{{ t.asset }}/{{ t.fiat }}<div class="muted small">{{ t.detected_local or '' }}</div>{% if t.revalidation_checked_at %}<div class="muted small">Comprobación: {{ t.revalidation_checked_at[:19] }} UTC</div>{% endif %}</td>
         <td data-label="Neto real" class="num">
           {% if t.status == 'completed' %}
           <span class="{{ 'pos' if t.net_pct >= 0 else 'neg' }}">{{ '%.3f'|format(t.net_pct) }}%</span>

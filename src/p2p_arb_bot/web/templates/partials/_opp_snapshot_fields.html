@@ -9,3 +9,7 @@
 <input type="hidden" name="fiat" value="{{ opp.fiat or '' }}">
 <input type="hidden" name="est_net_pct" value="{{ opp.net_pct if opp.net_pct is not none else '' }}">
 <input type="hidden" name="est_profit_usdt" value="{{ opp.est_profit_usdt or '' }}">
+<input type="hidden" name="market_route_key" value="{{ opp.market_route_key or '' }}">
+<input type="hidden" name="funds_revision" value="{{ opp.funds_revision if opp.funds_revision is defined else '' }}">
+<input type="hidden" name="revalidation_id" value="{{ opp.revalidation_id or '' }}">
+<input type="hidden" name="revalidation_checked_at" value="{{ opp.revalidation_checked_at or '' }}">

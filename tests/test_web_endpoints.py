@@ -63,6 +63,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("STATUS_PATH", str(tmp_path / "status.json"))
     monkeypatch.setenv("LOG_PATH", str(tmp_path / "bot.log"))
     monkeypatch.setenv("BOT_PIDFILE", str(tmp_path / "bot.pid"))
+    monkeypatch.setenv("CONTROL_DB_PATH", str(tmp_path / "control.db"))
+    monkeypatch.setenv("MARKET_FRESHNESS_S", "60")
+    monkeypatch.setenv("REVALIDATION_COOLDOWN_S", "0")
     monkeypatch.setenv("DASHBOARD_PASSWORD", PASSWORD)
     monkeypatch.setenv("DASHBOARD_SECRET", "secreto-de-firma-para-tests")
     return tmp_path
@@ -128,7 +131,7 @@ def test_dashboard_explica_funcion_del_bot(client):
 
 # --- rutas protegidas --------------------------------------------------------
 
-PROTECTED_GET = ["/partials/trades", "/trades/new?opp_id=1", "/trades/fail?opp_id=1", "/config"]
+PROTECTED_GET = ["/partials/trades", "/trades/new?opp_id=1", "/trades/fail?opp_id=1", "/config", "/funds"]
 
 
 @pytest.mark.parametrize("route", PROTECTED_GET)
@@ -445,3 +448,199 @@ def test_historial_muestra_ganancias_btc_sin_redondear_a_cero(authed):
     assert response.status_code == 200
     assert '~0.000002 BTC' in response.text
     assert 'Ganancia realizada' in response.text
+
+
+def _seed_market(env):
+    from p2p_arb_bot.domain.market import evaluate_routes
+    from p2p_arb_bot.infrastructure.market_store import MarketStore
+    from tests.test_monitor import make_ad, target
+    buys, sells = [make_ad("b", "800", "BUY")], [make_ad("s", "820", "SELL")]
+    t = target()
+    store = MarketStore(str(env / "opps.db"))
+    store.record(t, buys, sells, datetime.now(timezone.utc))
+    store.close()
+    return buys, sells, t, evaluate_routes(buys, sells, t)[0].key
+
+
+def _seed_funds(env):
+    from p2p_arb_bot.web.fund_store import FundStore
+    store = FundStore(str(env / "trades.db"))
+    aid = store.save(name="Banco privado", fiat="VES", balance="5000", methods="PagoMovil", can_receive=True)
+    return store, aid
+
+
+@pytest.mark.parametrize("route,data", [
+    ("/funds/accounts", {"name": "Cuenta", "fiat": "VES", "balance": "100", "methods": "PagoMovil"}),
+    ("/funds/accounts/1/archive", {"version": 1}),
+    ("/funds/reservations", {"account_id": 1, "amount": "50", "version": 1}),
+    ("/funds/reservations/1/release", {}),
+    ("/market/revalidate", {"route_key": "ruta"}),
+    ("/market/reserve", {"route_key": "ruta", "account_id": 1, "version": 1, "funds_revision": 1}),
+])
+def test_nuevas_mutaciones_exigen_login(client, route, data):
+    assert client.post(route, data=data, headers={"HX-Request": "true"}).status_code == 401
+
+
+def test_mercado_publico_no_filtra_fondos_ni_comprobaciones(client, env):
+    from p2p_arb_bot.infrastructure.control_store import ControlStore
+    _seed_market(env)
+    _seed_funds(env)
+    ControlStore(str(env / "control.db")).enqueue({"route_key": "privada", "funds": "123456.78"})
+    for endpoint in ("/", "/partials/market", "/partials/opportunities", "/partials/status", "/partials/log"):
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        assert "Banco privado" not in response.text and "123456.78" not in response.text
+        assert "Comprobaciones solicitadas" not in response.text
+    body = client.get("/partials/market").text
+    assert "Observada" in body and "Oportunidades según tus fondos" not in body
+
+
+def test_gestion_fondos_reserva_y_liberacion(authed, env):
+    response = authed.post("/funds/accounts", data={"name": "Mi banco", "fiat": "VES", "balance": "5000",
+                                                   "methods": "PagoMovil,Banesco", "can_receive": "true"})
+    assert response.status_code == 200 and "Mi banco" in response.text
+    assert authed.post("/funds/reservations", data={"account_id": 1, "amount": "1000", "version": 1}).status_code == 200
+    body = authed.get("/funds").text
+    assert "Disponible: 4000 VES" in body
+    response = authed.post("/funds/accounts", data={"account_id": 1, "version": 2, "name": "Mi banco",
+                                                   "fiat": "VES", "balance": "500", "methods": "PagoMovil"})
+    assert response.status_code == 400 and "reservas activas" in response.text
+    assert authed.post("/funds/reservations/1/release").status_code == 200
+    assert "Disponible: 5000 VES" in authed.get("/funds").text
+    assert authed.post("/funds/accounts/1/archive", data={"version": 3}).status_code == 200
+    assert "Fondos sin configurar" in authed.get("/funds").text
+
+
+def test_revalidacion_bot_detenido_y_reserva_sin_comprobacion(authed, env, monkeypatch):
+    from p2p_arb_bot.web.bot_manager import BotManager
+    monkeypatch.setattr(BotManager, "is_running", lambda self: False)
+    _, _, _, key = _seed_market(env)
+    _, aid = _seed_funds(env)
+    response = authed.post("/market/revalidate", data={"route_key": key, "account_id": aid})
+    assert response.status_code == 200 and "El bot está detenido" in response.text
+    response = authed.post("/market/reserve", data={"route_key": key, "account_id": aid, "version": 1, "funds_revision": 1})
+    assert "Revalida esta ruta" in response.text
+
+
+def test_flujo_revalidacion_a_reserva_con_fuente_falsa(authed, env, monkeypatch):
+    import asyncio
+    from p2p_arb_bot.application.monitor import MonitorService
+    from p2p_arb_bot.infrastructure.control_store import ControlStore
+    from p2p_arb_bot.infrastructure.market_store import MarketStore
+    from p2p_arb_bot.web.bot_manager import BotManager
+    from tests.test_monitor import FakeSource
+    monkeypatch.setattr(BotManager, "is_running", lambda self: True)
+    buys, sells, t, key = _seed_market(env)
+    store, aid = _seed_funds(env)
+    data = {"route_key": key, "account_id": aid}
+    response = authed.post("/market/revalidate", data=data)
+    assert response.status_code == 200 and "Pendiente" in response.text
+    # El segundo clic reutiliza la solicitud pendiente.
+    authed.post("/market/revalidate", data=data)
+    queue = ControlStore(str(env / "control.db"))
+    assert len(queue.recent()) == 1
+    market = MarketStore(str(env / "opps.db"))
+    service = MonitorService(FakeSource(buys, sells), [], [], observer=market, revalidations=queue)
+    asyncio.run(service.process_revalidation([t]))
+    market.close()
+    body = authed.get("/partials/market").text
+    assert "Revalidada" in body and "Reservar fondos" in body
+    form = authed.get(f"/trades/new?market_key={key}&account_id={aid}")
+    assert form.status_code == 200
+    assert f'name="market_route_key" value="{key}"' in form.text
+    assert f'name="revalidation_id" value="{queue.recent()[0]["id"]}"' in form.text
+    assert "Tiempo medio desde la solicitud" in body
+    response = authed.post("/market/reserve", data={**data, "version": 1, "funds_revision": 1})
+    assert response.status_code == 200 and "Fondos reservados" in response.text
+    assert store.snapshot()[0][0].available == 0
+    assert len(store.reservations()) == 1
+    # La reserva no convierte el snapshot del intento en una operación de cero.
+    form = authed.get(f"/trades/new?market_key={key}&account_id={aid}").text
+    assert 'value="6.25"' in form and 'name="funds_revision" value="1"' in form
+
+
+def test_registro_de_ruta_conserva_version_y_no_modifica_fondos(authed, env):
+    _, _, _, key = _seed_market(env)
+    funds, aid = _seed_funds(env)
+    for endpoint in ("new", "fail"):
+        body = authed.get(f"/trades/{endpoint}?market_key={key}&account_id={aid}").text
+        assert f'name="market_route_key" value="{key}"' in body
+        assert 'name="funds_revision" value="1"' in body
+    response = authed.post("/trades", data={"status": "completed", "opportunity_id": 0,
+                                           "asset": "USDT", "fiat": "VES", "real_fiat_buy": "5000",
+                                           "real_fiat_sell": "5100", "real_usdt": "6.25",
+                                           "market_route_key": key, "funds_revision": "1",
+                                           "revalidation_id": "snapshot-privado",
+                                           "revalidation_checked_at": "2026-10-08T12:00:00+00:00"})
+    assert response.status_code == 200 and "Comprobación: 2026-10-08T12:00:00" in response.text
+    saved = trade_store.recent_trades(str(env / "trades.db"))[0]
+    assert saved["market_route_key"] == key and saved["funds_revision"] == "1"
+    assert saved["revalidation_id"] == "snapshot-privado"
+    assert funds.snapshot()[0][0].available == 5000
+
+
+def test_mercado_con_sesion_no_se_puede_cachear(authed, env):
+    _seed_market(env)
+    _seed_funds(env)
+    response = authed.get("/partials/market")
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["vary"] == "Cookie"
+
+
+def test_consulta_normal_identica_mantiene_revalidacion_y_cambio_la_invalida(authed, env, monkeypatch):
+    import asyncio
+    from dataclasses import replace
+    from datetime import timedelta
+    from p2p_arb_bot.application.monitor import MonitorService
+    from p2p_arb_bot.infrastructure.control_store import ControlStore
+    from p2p_arb_bot.infrastructure.market_store import MarketStore
+    from p2p_arb_bot.web.bot_manager import BotManager
+    from tests.test_monitor import FakeSource
+    monkeypatch.setattr(BotManager, "is_running", lambda self: True)
+    buys, sells, t, key = _seed_market(env)
+    _, aid = _seed_funds(env)
+    authed.post("/market/revalidate", data={"route_key": key, "account_id": aid})
+    market = MarketStore(str(env / "opps.db"))
+    service = MonitorService(FakeSource(buys, sells), [], [], observer=market,
+                             revalidations=ControlStore(str(env / "control.db")))
+    asyncio.run(service.process_revalidation([t]))
+    market.record(t, buys, sells, datetime.now(timezone.utc) + timedelta(seconds=1))
+    assert "Reservar fondos" in authed.get("/partials/market").text
+    market.record(t, buys, [replace(sells[0], price=Decimal("830"))], datetime.now(timezone.utc) + timedelta(seconds=2))
+    assert "Reservar fondos" not in authed.get("/partials/market").text
+    market.close()
+
+
+def test_cambio_saldo_durante_revalidacion_impide_reserva(authed, env, monkeypatch):
+    import asyncio
+    from p2p_arb_bot.application.monitor import MonitorService
+    from p2p_arb_bot.infrastructure.control_store import ControlStore
+    from p2p_arb_bot.web.bot_manager import BotManager
+    from tests.test_monitor import FakeSource
+    monkeypatch.setattr(BotManager, "is_running", lambda self: True)
+    buys, sells, t, key = _seed_market(env)
+    funds, aid = _seed_funds(env)
+    data = {"route_key": key, "account_id": aid}
+    authed.post("/market/revalidate", data=data)
+    funds.save(name="Banco privado", fiat="VES", balance="4000", methods="PagoMovil", can_receive=True,
+               account_id=aid, expected_version=1)
+    service = MonitorService(FakeSource(buys, sells), [], [], revalidations=ControlStore(str(env / "control.db")))
+    asyncio.run(service.process_revalidation([t]))
+    assert "Los fondos cambiaron" in authed.get("/partials/market").text
+    response = authed.post("/market/reserve", data={**data, "version": 2, "funds_revision": 2})
+    assert "Revalida esta ruta" in response.text and funds.reservations() == []
+
+
+def test_datos_caducados_no_ofrecen_reserva_y_esquema_viejo_sigue_visible(authed, env):
+    from datetime import timedelta
+    from p2p_arb_bot.infrastructure.market_store import MarketStore
+    buys, sells, t, _ = _seed_market(env)
+    market = MarketStore(str(env / "opps.db"))
+    market.record(t, buys, sells, datetime.now(timezone.utc) - timedelta(seconds=120))
+    market.close()
+    _seed_opportunity(str(env / "opps.db"))
+    _seed_funds(env)
+    body = authed.get("/").text
+    assert "Sin datos recientes" in body and "Mercado desactualizado" in body
+    assert "Historial de oportunidades" in body and "vend1" not in body  # vendedor está en el formulario, no tabla
+    assert "Reservar fondos" not in body

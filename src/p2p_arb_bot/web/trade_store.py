@@ -72,6 +72,20 @@ def _connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    additions = ("market_route_key", "funds_revision", "revalidation_id", "revalidation_checked_at")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
+    if any(name not in columns for name in additions):
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            # Otro request puede haber migrado mientras esperábamos el bloqueo.
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
+            for name in additions:
+                if name not in columns:
+                    conn.execute(f"ALTER TABLE trades ADD COLUMN {name} TEXT")
+            conn.commit()
+        except sqlite3.Error:
+            conn.close()
+            raise
     return conn
 
 
@@ -111,6 +125,10 @@ def save_trade(db_path: str, data: dict) -> int | None:
         "sell_pay_method": data.get("sell_pay_method"),
         "failure_reason": data.get("failure_reason"),
         "notes": data.get("notes"),
+        "market_route_key": data.get("market_route_key"),
+        "funds_revision": data.get("funds_revision"),
+        "revalidation_id": data.get("revalidation_id"),
+        "revalidation_checked_at": data.get("revalidation_checked_at"),
     }
     cols = ", ".join(row)
     placeholders = ", ".join("?" for _ in row)

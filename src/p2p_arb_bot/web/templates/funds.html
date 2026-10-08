@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Fondos · P2P Arb{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">CAPITAL PRIVADO</p><h1>Fondos y reservas</h1><p class="muted">Declara el saldo total de cada cuenta, incluidas las reservas. El disponible se calcula restándolas. Los saldos se actualizan a mano; registrar una operación no los modifica.</p></div></div>
+{% if message %}<p class="alert ok" role="status">{{ message }}</p>{% endif %}
+{% if error %}<p class="alert error" role="alert">{{ error }}</p>{% endif %}
+{% for a in accounts %}
+<section class="card">
+  <h2>{{ a.name }} · {{ a.fiat }}</h2>
+  <p>Saldo: {{ a.balance|unidades }} · Reservado: {{ a.reserved|unidades }} · <strong>Disponible: {{ a.available|unidades }} {{ a.fiat }}</strong></p>
+  <p class="muted small">Última declaración de saldo: {{ a.updated_at[:19] }} UTC. Una cuenta asociada a varios métodos comparte el mismo dinero.</p>
+  <details><summary>Actualizar saldo o métodos</summary>
+    <form action="/funds/accounts" method="post" class="form">
+      <input type="hidden" name="account_id" value="{{ a.id }}"><input type="hidden" name="version" value="{{ a.version }}"><input type="hidden" name="fiat" value="{{ a.fiat }}">
+      <label>Nombre<input name="name" value="{{ a.name }}" maxlength="100" required></label>
+      <label>Saldo total declarado ({{ a.fiat }})<input name="balance" inputmode="decimal" value="{{ a.balance }}" required></label>
+      <label>Identificadores de métodos de Binance, separados por coma<input name="methods" value="{{ a.methods|join(',') }}" maxlength="1000" required></label>
+      <label class="check"><input type="checkbox" name="can_receive" value="true" {{ 'checked' if a.can_receive }}>Puedo recibir pagos por estos métodos</label>
+      <button class="btn" type="submit">Guardar cuenta</button>
+    </form>
+  </details>
+  <details><summary>Reservar capital manualmente</summary>
+    <form action="/funds/reservations" method="post" class="form">
+      <input type="hidden" name="account_id" value="{{ a.id }}"><input type="hidden" name="version" value="{{ a.version }}">
+      <label>Importe ({{ a.fiat }})<input name="amount" inputmode="decimal" required></label>
+      <label>Nota<input name="note" maxlength="500"></label>
+      <button class="btn" type="submit">Reservar</button>
+    </form>
+  </details>
+  <form action="/funds/accounts/{{ a.id }}/archive" method="post"><input type="hidden" name="version" value="{{ a.version }}"><button class="btn tiny" type="submit" {{ 'disabled' if a.reserved > 0 }}>Archivar cuenta</button></form>
+</section>
+{% else %}<p class="muted empty">Fondos sin configurar. Añade tu primera cuenta para evaluar oportunidades compatibles.</p>{% endfor %}
+<section class="card config-card">
+  <h2>Añadir cuenta</h2>
+  <form action="/funds/accounts" method="post" class="form">
+    <label>Nombre de la cuenta<input name="name" placeholder="Mi cuenta Banesco" maxlength="100" required></label>
+    <label>Moneda<input name="fiat" value="{{ fiat }}" maxlength="10" required></label>
+    <label>Saldo total declarado<input name="balance" inputmode="decimal" required></label>
+    <label>Métodos de Binance, separados por coma<input name="methods" placeholder="Banesco,PagoMovil" maxlength="1000" required></label>
+    <label class="check"><input type="checkbox" name="can_receive" value="true" checked>Puedo recibir pagos por estos métodos</label>
+    <button class="btn primary" type="submit">Añadir cuenta</button>
+  </form>
+</section>
+<section class="card"><h2>Reservas activas</h2>
+{% for r in reservations %}<p>{{ r.name }} · {{ r.amount|unidades }} {{ r.fiat }} · {{ r.note }} <span class="muted small">{{ r.created_at[:19] }} UTC</span></p><form action="/funds/reservations/{{ r.id }}/release" method="post"><button class="btn tiny" type="submit">Liberar reserva</button></form>{% else %}<p class="muted">Sin reservas activas.</p>{% endfor %}
+</section>
+<details class="card"><summary>Últimos cambios</summary>{% for c in changes %}<p class="small">{{ c.changed_at[:19] }} UTC · {{ c.name }} · {{ c.action }}<br><span class="muted">{{ c.payload }}</span></p>{% else %}<p class="muted">Sin cambios registrados.</p>{% endfor %}</details>
+<p><a href="/">← Volver al mercado</a></p>
+{% endblock %}
