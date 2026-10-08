@@ -26,6 +26,7 @@ services:
       # al volumen sí o sí: es lo ÚNICO que el usuario escribe a mano y no se
       # puede regenerar. En /app se perdería en cada recreación del contenedor.
       TRADES_DB_PATH: "/data/trades.db"
+      CONTROL_DB_PATH: "/data/control.db"
       # El dashboard edita este .env al guardar config; el bind-mount de abajo
       # lo deja en el mismo fichero que lee env_file.
       ENV_PATH: "/app/.env"

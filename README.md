@@ -2,10 +2,10 @@
 
 Bot en Python que **monitorea** el mercado P2P de Binance para un par (por
 defecto USDT/VES), detecta oportunidades de arbitraje (spread entre el mejor
-precio de compra y el mejor de venta) según los métodos de pago y el monto en
-USDT que indiques, **avisa por consola** cuando la ganancia neta supera un
+precio de compra y el mejor de venta) según los métodos de pago y el capital en
+moneda fiat que indiques, **avisa por consola** cuando la ganancia neta supera un
 umbral, y guarda cada oportunidad en **SQLite** con el % de ganancia y los
-enlaces a los anuncios.
+enlaces al mercado filtrado de compra y venta.
 
 > ⚠️ **El bot SOLO monitorea y avisa.** No ejecuta operaciones, no publica
 > anuncios y **no** usa API keys de trading de Binance. Usa únicamente el
@@ -69,14 +69,14 @@ python -m p2p_arb_bot.main
 Al arrancar, el bot:
 
 1. Descubre los métodos de pago disponibles para el par y los muestra numerados.
-2. Te pide elegir uno o varios (Enter = todos), el monto máximo en USDT, el
+2. Te pide elegir uno o varios (Enter = todos), el fondo máximo en fiat, el
    umbral de ganancia %, el buffer de fees %, el intervalo de polling y si
    filtrar solo comerciantes verificados. Cada prompt usa el valor del `.env`
    como predeterminado (Enter para aceptarlo).
 3. Entra en bucle: consulta ambos lados (BUY/SELL) en paralelo, calcula el
    mejor spread (incluyendo **pares cruzados** entre métodos), y:
    - Si hay oportunidad ≥ umbral: imprime un panel destacado con % neto/bruto,
-     precios, métodos y los **dos enlaces a las publicaciones** (compra y venta),
+     precios, métodos y los **dos enlaces al mercado filtrado** (compra y venta),
      y la guarda en SQLite.
    - Si no: imprime una línea de estado discreta (heartbeat) con el mejor
      spread actual.
@@ -111,13 +111,78 @@ Qué ofrece:
   oportunidades recientes y las últimas líneas del log. Todo se auto-refresca.
 - **Ejecutar** (login): botones de arrancar / parar / reiniciar. El dashboard
   gestiona el bot como subproceso.
-- **Configurar** (login): edita los parámetros clave (umbral %, monto máx USDT,
+- **Configurar** (login): edita los parámetros clave (umbral %, fondo máximo fiat,
   métodos de pago, intervalo) y los aplica reiniciando el bot. Escribe en `.env`
   preservando el resto de claves.
 
 El estado en vivo lo alimenta un `StatusNotifier` que el bot añade a su lista de
 notifiers: vuelca el último heartbeat/oportunidad a `STATUS_PATH` (`status.json`),
 así el dashboard no necesita pegarle a Binance por su cuenta.
+
+### Mercado reciente y revalidación
+
+El dashboard separa **Mercado reciente** del **Historial de oportunidades**.
+Cada ruta muestra primera observación, última comprobación y última observación
+favorable. Las consultas repetidas actualizan su vigencia aunque se suprima un
+aviso duplicado. Los tiempos de seguimiento se muestran en UTC.
+
+Un libro con más de `MARKET_FRESHNESS_S` segundos se marca **sin datos recientes**
+(por defecto, dos intervalos de barrido). Un error conserva el último libro
+válido: no significa que desaparecieron los anuncios. **No observada** indica
+que la ruta no apareció en las filas consultadas; no confirma su expiración.
+Las agrupaciones usan contrapartes, identificadores observados y métodos: no
+certifican identidad exacta porque Binance puede devolver `advNo` redondeados.
+
+Con sesión, **Comprobar de nuevo** envía una solicitud al bot por una cola privada
+(`CONTROL_DB_PATH`). El bot debe estar corriendo. Consulta ambos lados usando la
+misma fuente, concurrencia y backoff del monitor, y muestra precios anteriores y
+nuevos o el motivo de incompatibilidad. Una contraparte distinta se presenta
+como alternativa. La comprobación no reserva anuncios ni garantiza el cierre.
+
+Los episodios y cambios observados se retienen `MARKET_RETENTION_DAYS` días; las
+rutas seguidas se limitan con `MARKET_MAX_ROUTES`. El historial de oportunidades
+y los snapshots de operaciones se conservan independientemente.
+
+### Fondos por banco o método de pago
+
+La pantalla **Fondos** requiere login. Permite declarar cuentas, su moneda,
+saldo total, métodos de Binance asociados y si puedes recibir pagos. Por
+ejemplo, `Banesco,PagoMovil` puede representar dos métodos respaldados por una
+misma cuenta: su saldo no se suma dos veces. Los identificadores deben coincidir
+con los métodos mostrados por el monitor.
+
+- **Disponible = saldo declarado − reservas activas.** Las reservas se crean y
+  liberan explícitamente; no implican una transferencia ni una orden en Binance.
+- El saldo declarado incluye las reservas. Registrar una operación no modifica
+  saldos automáticamente: actualízalos con lo que realmente ocurrió.
+- Las recomendaciones evalúan cada cuenta de compra por separado, acotadas por
+  `MAX_FIAT`, límites e inventario de ambos anuncios. Pueden usar menos que el
+  fondo global. El banco receptor requiere habilitación para recibir, no saldo.
+- Una recomendación muestra incompatibilidades y el déficit para el mínimo.
+  Si no hay cuentas configuradas, lo indica sin asumir un saldo bancario.
+- Revalidar con los fondos actuales habilita **Reservar fondos**. Cambiar saldos
+  o métodos invalida esa comprobación para reservar; el servidor vuelve a
+  evaluar la capacidad y verifica versiones dentro de una transacción.
+
+El dimensionamiento redondea las unidades cripto hacia abajo a ocho decimales,
+como la presentación del dashboard, para no recomendar una reserva mayor que el
+saldo por errores de redondeo. El importe sobrante permanece disponible.
+
+Desde las rutas personalizadas puedes registrar una operación o un intento
+fallido. El formulario conserva la versión de fondos y, cuando corresponde,
+la comprobación utilizada junto al estimado; sobrevive a la limpieza del
+historial y a la caducidad de la cola. El panel de comprobaciones muestra su
+tiempo medio, porcentaje favorable y motivos de incompatibilidad del periodo
+retenido. Son consultas observadas, no beneficios realizados.
+
+Las alternativas compiten por el mismo capital y no son ganancias acumulables.
+Los saldos, reservas y comprobaciones personales se guardan en bases privadas;
+la supervisión pública solo muestra mercado. `TRADES_DB_PATH` conserva cuentas,
+reservas y operaciones; debe ser distinto de `DB_PATH` y `CONTROL_DB_PATH`.
+Docker persiste las tres bases en `/data`.
+
+La primera versión sirve al operador único del dashboard y utiliza actualización
+manual. No integra bancos, cartera cripto ni transferencias entre cuentas.
 
 En Docker el dashboard es el **contenedor principal** y arranca el bot como
 subproceso (ver más abajo).
@@ -162,7 +227,7 @@ docker compose logs -f
 ```
 
 En modo no interactivo no hay menú de métodos: define `PAY_METHODS` en `.env`
-(vacío = vigilar todos) junto con `MAX_USDT`, `THRESHOLD_PCT`, etc. Para
+(vacío = vigilar todos) junto con `MAX_FIAT`, `THRESHOLD_PCT`, etc. Para
 **descubrir métodos** o configurar a mano dentro del contenedor, lánzalo
 interactivo:
 
@@ -210,22 +275,25 @@ venta que sobrevivan a estos 4 filtros** (`domain/arbitrage.py`, función
 
 1. **Método de pago** — que el anuncio use uno de tus `PAY_METHODS`
    (vacío = se aceptan todos).
-2. **Acepta tu monto** (`accepts_amount`) — que tu operación quepa entre el
-   mín/máx del anuncio. El monto fiat se calcula como `MAX_USDT × precio`
-   (p. ej. `100 USDT × 825 ≈ 82.500 VES`), así que un `MAX_USDT` bajo puede no
-   encajar en anuncios con mínimos altos, y uno alto puede pasarse del máximo.
-3. **Inventario** (`has_inventory`) — que al anunciante le queden ≥ `MAX_USDT`
-   disponibles (`surplusAmount`).
+2. **Acepta tu monto** (`accepts_amount`) — que `MAX_FIAT` quepa entre los
+   mínimos y máximos de compra. Para la venta, se validan las unidades compradas
+   multiplicadas por el precio de venta: su importe fiat puede ser distinto.
+3. **Inventario** (`has_inventory`) — que haya unidades suficientes para cubrir
+   la compra (`MAX_FIAT / precio_compra`) y la venta de esas mismas unidades.
 4. **Outliers** — que el precio no se desvíe de la mediana más de
    `OUTLIER_MAX_DEV_PCT` (descarta precios "cebo"). `0` desactiva este filtro.
 
 Si ves ese mensaje de forma persistente y **sin que se registren oportunidades**
 (la tabla `opportunities` sigue vacía), casi siempre es por **configuración
-demasiado restrictiva**, no por un fallo de red: revisa `MAX_USDT` (prueba un
+demasiado restrictiva**, no por un fallo de red: revisa `MAX_FIAT` (prueba un
 valor que encaje con los límites típicos del par), reduce la lista de
 `PAY_METHODS` o déjala vacía, y afloja/ajusta `OUTLIER_MAX_DEV_PCT`. Que el bot
 traiga anuncios pero no forme pares confirma que el egress a Binance funciona; el
 cuello de botella son los filtros de elegibilidad.
+
+El historial del monitor conserva la evaluación del fondo completo. La vista
+de mercado reciente y las recomendaciones por cuenta también consideran montos
+menores: pueden mostrar rutas compatibles aunque el fondo completo no encaje.
 
 ## Base de datos
 
@@ -247,7 +315,7 @@ sqlite3 opportunities.db "SELECT detected_at, net_pct, buy_price, sell_price FRO
 ## Configuración (.env)
 
 Todas las variables están documentadas en [`.env.example`](.env.example). Las
-más relevantes: `ASSET`, `FIAT`, `PAY_METHODS`, `MAX_USDT`, `THRESHOLD_PCT`,
+más relevantes: `ASSETS`, `FIAT`, `PAY_METHODS`, `MAX_FIAT`, `THRESHOLD_PCT`,
 `FEE_BUFFER_PCT`, `MERCHANT_CHECK`, `POLL_INTERVAL_S`, `DB_PATH`, `IMPERSONATE`,
 `PROXY`, `BEEP`, `NO_INPUT`.
 
