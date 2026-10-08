@@ -18,13 +18,6 @@
 </section>
 
 <section class="card">
-  <div class="card-head"><h2>Mercado reciente</h2><span class="muted small">Vigencia y comprobaciones por ruta</span></div>
-  <div id="market" hx-get="/partials/market" hx-trigger="every 5s" hx-swap="innerHTML">
-    {% include "partials/market.html" %}
-  </div>
-</section>
-
-<section class="card">
   <div class="card-head">
     <h2>Última oportunidad detectada</h2>
     <span class="muted small">Estimación al detectar · confirma los anuncios antes de operar</span>
@@ -40,7 +33,7 @@
 
 <section class="card">
   <div class="card-head">
-    <h2 id="opportunities-heading" tabindex="-1">Historial de oportunidades</h2>
+    <h2 id="opportunities-heading" tabindex="-1">Oportunidades recientes</h2>
     <div class="card-head-actions">
       <span class="muted small">se actualiza cada 8 s</span>
       {% if authed %}

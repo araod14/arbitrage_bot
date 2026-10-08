@@ -9,23 +9,17 @@ from __future__ import annotations
 
 import os
 import secrets
-import sqlite3
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, db_reader, env_store, trade_store, market_reader, market_view
+from . import auth, db_reader, env_store, trade_store
 from .bot_manager import BotManager
-from .fund_store import FundStore
-from ..config import Defaults, validate_storage_paths
-from ..infrastructure.control_store import ControlStore
-from ..infrastructure.market_codec import target_dict, read_route, read_target
 
 _HERE = Path(__file__).resolve().parent
 _TEMPLATES = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -94,67 +88,21 @@ def create_app() -> FastAPI:
     secret = os.getenv("DASHBOARD_SECRET") or secrets.token_hex(32)
     app.add_middleware(SessionMiddleware, secret_key=secret)
 
-    @app.middleware("http")
-    async def prevent_private_cache(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        response = await call_next(request)
-        # Una misma URL pública puede incluir fondos cuando hay sesión.
-        if not request.url.path.startswith("/static/"):
-            response.headers["Cache-Control"] = "no-store"
-            response.headers["Vary"] = "Cookie"
-        return response
-
     static_dir = _HERE / "static"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     paths = _paths()
-    validate_storage_paths(paths["db_path"], Defaults.from_env().control_db_path, paths["trades_db_path"])
     bot = BotManager(
         pidfile=os.getenv("BOT_PIDFILE")
         or os.path.join(os.path.dirname(os.path.abspath(paths["db_path"])), "bot.pid"),
         log_path=paths["log_path"],
     )
 
-    def _funds() -> FundStore:
-        return FundStore(_paths()["trades_db_path"])
-
-    def _queue() -> ControlStore:
-        cfg = Defaults.from_env()
-        return ControlStore(cfg.control_db_path, ttl_s=cfg.revalidation_ttl_s,
-                            cooldown_s=cfg.revalidation_cooldown_s,
-                            retention_days=cfg.market_retention_days,
-                            max_pending=cfg.revalidation_max_pending)
-
-    def _market_context(request: Request, message: str | None = None, error: str | None = None) -> dict:
-        cfg = Defaults.from_env()
-        books = market_reader.books(_paths()["db_path"], cfg.market_freshness_s)
-        ctx = {"request": request, "authed": auth.is_authed(request), "message": message,
-               "error": error, "episodes": market_reader.episodes(_paths()["db_path"], cfg.market_freshness_s),
-               "recommendations": [], "revalidations": [], "funds_revision": 0, "books": books,
-               "revalidation_metrics": {}}
-        if ctx["authed"]:
-            accounts, revision = _funds().snapshot()
-            queue = _queue()
-            requests = queue.recent()
-            ctx.update({"funds_revision": revision, "revalidations": requests,
-                        "revalidation_metrics": queue.metrics(),
-                        "recommendations": market_view.recommendations(
-                            books,
-                            accounts, revision, requests, cfg.market_freshness_s, cfg.market_max_routes)})
-        return ctx
-
-    def _fund_context(request: Request, message: str | None = None, error: str | None = None) -> dict:
-        store = _funds()
-        accounts, revision = store.snapshot()
-        return {"request": request, "authed": True, "accounts": accounts, "funds_revision": revision,
-                "reservations": store.reservations(), "changes": store.changes(),
-                "fiat": Defaults.from_env().fiat, "message": message, "error": error}
-
     # --- helpers de contexto --------------------------------------------
 
     def _dashboard_context(request: Request) -> dict:
         p = _paths()
         return {
-            **_market_context(request),
             "request": request,
             "authed": auth.is_authed(request),
             "bot": _bot_view(),
@@ -174,96 +122,6 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
         return _TEMPLATES.TemplateResponse(request, "dashboard.html", _dashboard_context(request))
-
-    @app.get("/partials/market", response_class=HTMLResponse)
-    def partial_market(request: Request) -> HTMLResponse:
-        return _TEMPLATES.TemplateResponse(request, "partials/market.html", _market_context(request))
-
-    @app.get("/funds", response_class=HTMLResponse)
-    def funds_page(request: Request, _: None = Depends(auth.require_login)) -> HTMLResponse:
-        return _TEMPLATES.TemplateResponse(request, "funds.html", _fund_context(request))
-
-    @app.post("/funds/accounts", response_class=HTMLResponse)
-    def fund_save(request: Request, name: str = Form(...), fiat: str = Form(...),
-                  balance: str = Form(...), methods: str = Form(...),
-                  account_id: int = Form(0), version: int = Form(0), can_receive: bool = Form(False),
-                  _: None = Depends(auth.require_login)) -> HTMLResponse:
-        try:
-            _funds().save(name=name, fiat=fiat, balance=balance, methods=methods,
-                          account_id=account_id, expected_version=version, can_receive=can_receive)
-        except ValueError as exc:
-            return _TEMPLATES.TemplateResponse(request, "funds.html", _fund_context(request, error=str(exc)), status_code=400)
-        return RedirectResponse("/funds", status_code=303)
-
-    @app.post("/funds/accounts/{account_id}/archive", response_class=HTMLResponse)
-    def fund_archive(request: Request, account_id: int, version: int = Form(...),
-                     _: None = Depends(auth.require_login)) -> HTMLResponse:
-        try:
-            _funds().archive(account_id, version)
-        except ValueError as exc:
-            return _TEMPLATES.TemplateResponse(request, "funds.html", _fund_context(request, error=str(exc)), status_code=400)
-        return RedirectResponse("/funds", status_code=303)
-
-    @app.post("/funds/reservations", response_class=HTMLResponse)
-    def fund_reserve(request: Request, account_id: int = Form(...), amount: str = Form(...),
-                     version: int = Form(...), note: str = Form(""),
-                     _: None = Depends(auth.require_login)) -> HTMLResponse:
-        try:
-            _funds().reserve(account_id, amount, expected_version=version, note=note)
-        except ValueError as exc:
-            return _TEMPLATES.TemplateResponse(request, "funds.html", _fund_context(request, error=str(exc)), status_code=400)
-        return RedirectResponse("/funds", status_code=303)
-
-    @app.post("/funds/reservations/{reservation_id}/release", response_class=HTMLResponse)
-    def fund_release(request: Request, reservation_id: int,
-                     _: None = Depends(auth.require_login)) -> HTMLResponse:
-        try:
-            _funds().release(reservation_id)
-        except ValueError as exc:
-            return _TEMPLATES.TemplateResponse(request, "funds.html", _fund_context(request, error=str(exc)), status_code=400)
-        return RedirectResponse("/funds", status_code=303)
-
-    @app.post("/market/revalidate", response_class=HTMLResponse)
-    def revalidate(request: Request, route_key: str = Form(...), account_id: int = Form(0),
-                   _: None = Depends(auth.require_login)) -> HTMLResponse:
-        ctx = _market_context(request)
-        try:
-            if not bot.is_running():
-                raise ValueError("El bot está detenido. Arráncalo para comprobar el mercado.")
-            row = next((r for r in ctx["recommendations"] if r["route"].key == route_key
-                        and (r["account"].id if r["account"] else 0) == account_id), None)
-            if row is None:
-                raise ValueError("La ruta ya no está en el mercado reciente. Actualiza la lista.")
-            route, account = row["route"], row["account"]
-            _queue().enqueue({"route_key": route.key, "target": target_dict(row["target"]),
-                              "funds": str(account.available if account else row["target"].max_fiat),
-                              "buy_method": route.buy_method, "sell_method": route.sell_method,
-                              "old_buy_price": str(route.buy.price), "old_sell_price": str(route.sell.price),
-                              "account_id": account_id, "funds_revision": ctx["funds_revision"]})
-            return _TEMPLATES.TemplateResponse(request, "partials/market.html",
-                                               _market_context(request, message="Comprobación solicitada. El resultado aparecerá aquí."))
-        except ValueError as exc:
-            return _TEMPLATES.TemplateResponse(request, "partials/market.html", _market_context(request, error=str(exc)))
-        except sqlite3.Error:
-            return _TEMPLATES.TemplateResponse(request, "partials/market.html", _market_context(request, error="No se pudo guardar la solicitud."))
-
-    @app.post("/market/reserve", response_class=HTMLResponse)
-    def reserve_route(request: Request, route_key: str = Form(...), account_id: int = Form(...),
-                      version: int = Form(...), funds_revision: int = Form(...),
-                      _: None = Depends(auth.require_login)) -> HTMLResponse:
-        ctx = _market_context(request)
-        try:
-            row = next((r for r in ctx["recommendations"] if r["route"].key == route_key
-                        and r["account"] and r["account"].id == account_id), None)
-            if row is None or not row["revalidated"]:
-                raise ValueError("Revalida esta ruta con los fondos actuales antes de reservar.")
-            _funds().reserve(account_id, str(row["route"].amount_fiat), expected_version=version,
-                            expected_revision=funds_revision, note=f"{row['target'].label}: {row['route'].buy_method} → {row['route'].sell_method}",
-                            source_request=row["request"]["id"])
-            return _TEMPLATES.TemplateResponse(request, "partials/market.html",
-                                               _market_context(request, message="Fondos reservados. Puedes liberarlos desde Fondos."))
-        except ValueError as exc:
-            return _TEMPLATES.TemplateResponse(request, "partials/market.html", _market_context(request, error=str(exc)))
 
     @app.get("/partials/status", response_class=HTMLResponse)
     def partial_status(request: Request) -> HTMLResponse:
@@ -427,49 +285,6 @@ def create_app() -> FastAPI:
             "summary": trade_store.summary(p["trades_db_path"]),
         }
 
-    def _market_snapshot(request: Request, market_key: str, account_id: int) -> dict:
-        ctx = _market_context(request)
-        row = next((r for r in ctx["recommendations"] if r["route"].key == market_key
-                    and (r["account"].id if r["account"] else 0) == account_id), None)
-        held = None
-        for reservation in _funds().reservations():
-            if reservation["account_id"] != account_id or not reservation["source_request"]:
-                continue
-            candidate = _queue().get(reservation["source_request"])
-            if candidate and candidate["payload"]["route_key"] == market_key:
-                held = candidate
-                break
-        if held and held["result"] and held["result"].get("route"):
-            # Reservar reduce el disponible, pero no cambia lo que se iba a operar.
-            result = held["result"]
-            route = read_route(result["route"])
-            target = read_target(result["target"])
-            stamp = result["checked_at"]
-            snapshot_revision = held["payload"]["funds_revision"]
-            revalidation_id = held["id"]
-            feasible = True
-        else:
-            if row is None:
-                return {}
-            route, target = row["route"], row["target"]
-            result = row["request"]["result"] if row["revalidated"] else None
-            stamp = result["checked_at"] if result else next(
-                b["checked_at"] for b in ctx["books"] if b["target"].label == target.label)
-            snapshot_revision = ctx["funds_revision"]
-            revalidation_id = row["request"]["id"] if result else None
-            feasible = row["reason"] == "compatible"
-        return {"detected_at": stamp, "detected_local": db_reader.to_local(stamp),
-                "asset": target.asset, "fiat": target.fiat,
-                "net_pct": route.net_pct, "est_profit_usdt": route.units * route.net_pct / 100,
-                "buy_price": route.buy.price, "sell_price": route.sell.price,
-                "usable_usdt": route.units, "usable_fiat_buy": route.amount_fiat,
-                "usable_fiat_sell": route.units * route.sell.price, "feasible": feasible,
-                "buy_advertiser": route.buy.advertiser_name, "sell_advertiser": route.sell.advertiser_name,
-                "buy_pay_method": route.buy_method, "sell_pay_method": route.sell_method,
-                "market_route_key": market_key, "funds_revision": snapshot_revision,
-                "revalidation_id": revalidation_id,
-                "revalidation_checked_at": stamp if result else None}
-
     @app.get("/partials/trades", response_class=HTMLResponse)
     def partial_trades(
         request: Request, _: None = Depends(auth.require_login)
@@ -478,10 +293,9 @@ def create_app() -> FastAPI:
 
     @app.get("/trades/new", response_class=HTMLResponse)
     def trade_new(
-        request: Request, opp_id: int = 0, market_key: str = "", account_id: int = 0,
-        _: None = Depends(auth.require_login)
+        request: Request, opp_id: int, _: None = Depends(auth.require_login)
     ) -> HTMLResponse:
-        o = _market_snapshot(request, market_key, account_id) if market_key else _opp_snapshot(opp_id)
+        o = _opp_snapshot(opp_id)
         return _TEMPLATES.TemplateResponse(
             request,
             "partials/trade_form.html",
@@ -490,10 +304,9 @@ def create_app() -> FastAPI:
 
     @app.get("/trades/fail", response_class=HTMLResponse)
     def trade_fail(
-        request: Request, opp_id: int = 0, market_key: str = "", account_id: int = 0,
-        _: None = Depends(auth.require_login)
+        request: Request, opp_id: int, _: None = Depends(auth.require_login)
     ) -> HTMLResponse:
-        o = _market_snapshot(request, market_key, account_id) if market_key else _opp_snapshot(opp_id)
+        o = _opp_snapshot(opp_id)
         return _TEMPLATES.TemplateResponse(
             request,
             "partials/trade_fail_form.html",
@@ -529,10 +342,6 @@ def create_app() -> FastAPI:
         sell_pay_method: str = Form(""),
         failure_reason: str = Form(""),
         notes: str = Form(""),
-        market_route_key: str = Form(""),
-        funds_revision: str = Form(""),
-        revalidation_id: str = Form(""),
-        revalidation_checked_at: str = Form(""),
         _: None = Depends(auth.require_login),
     ) -> HTMLResponse:
         p = _paths()
@@ -561,10 +370,6 @@ def create_app() -> FastAPI:
                 "sell_pay_method": sell_pay_method or None,
                 "failure_reason": failure_reason or None,
                 "notes": notes or None,
-                "market_route_key": market_route_key or None,
-                "funds_revision": funds_revision or None,
-                "revalidation_id": revalidation_id or None,
-                "revalidation_checked_at": revalidation_checked_at or None,
             },
         )
         return _TEMPLATES.TemplateResponse(request, "partials/trades.html", _trades_ctx(request))

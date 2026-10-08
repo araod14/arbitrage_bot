@@ -6,8 +6,6 @@ Se usa ``asyncio.run`` para no añadir dependencia de pytest-asyncio.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
-from datetime import datetime, timezone
 from decimal import Decimal
 
 from p2p_arb_bot.application.monitor import MonitorService
@@ -193,97 +191,3 @@ def test_varios_targets_generan_una_oportunidad_por_moneda():
     usdt, btc = repo.saved
     assert usdt.max_usdt == D("100")     # 80.000 / 800
     assert btc.max_usdt == D("0.02")     # 80.000 / 4.000.000
-
-
-class FakeObserver:
-    def __init__(self):
-        self.records = []
-        self.errors = []
-
-    def record(self, target, buys, sells, now):
-        self.records.append((target, buys, sells, now))
-
-    def failed(self, target, now):
-        self.errors.append((target, now))
-
-
-class FakeQueue:
-    def __init__(self, payload):
-        self.request = {"payload": payload}
-        self.finished = []
-
-    def claim(self):
-        request, self.request = self.request, None
-        return request
-
-    def finish(self, request, result, *, error=False):
-        self.finished.append((result, error))
-
-
-def request_payload(buys, sells, t):
-    from p2p_arb_bot.domain.market import evaluate_routes
-    from p2p_arb_bot.infrastructure.market_codec import target_dict
-    route = evaluate_routes(buys, sells, t)[0]
-    return {"route_key": route.key, "target": target_dict(t), "funds": str(t.max_fiat),
-            "buy_method": route.buy_method, "sell_method": route.sell_method}
-
-
-def test_duplicado_actualiza_observacion_y_heartbeat():
-    buys, sells = [make_ad("b", "800", "BUY")], [make_ad("s", "820", "SELL")]
-    observer, notifier = FakeObserver(), FakeNotifier()
-    now = datetime(2026, 10, 8, tzinfo=timezone.utc)
-    service = MonitorService(FakeSource(buys, sells), [FakeRepo(duplicate=True)], [notifier],
-                             observer=observer, clock=lambda: now)
-    assert asyncio.run(service.run_cycle(target())) is None
-    assert observer.records[0][3] == now
-    assert notifier.heartbeats == [D("2.5")]
-    assert notifier.opportunities == []
-
-
-def test_revalidacion_comprueba_margen_nuevo_sin_alterar_historico():
-    buys, sells = [make_ad("b", "800", "BUY")], [make_ad("s", "820", "SELL")]
-    queue = FakeQueue(request_payload(buys, sells, target()))
-    observer, repo = FakeObserver(), FakeRepo()
-    service = MonitorService(FakeSource(buys, [replace(sells[0], price=D("801"))]), [repo], [],
-                             observer=observer, revalidations=queue)
-    asyncio.run(service.process_revalidation([target()]))
-    result, error = queue.finished[0]
-    assert not error and result["state"] == "margin"
-    assert repo.saved == [] and len(observer.records) == 1
-
-
-def test_revalidacion_no_confirma_contraparte_sustituida():
-    buys, sells = [make_ad("b", "800", "BUY")], [make_ad("s", "820", "SELL")]
-    queue = FakeQueue(request_payload(buys, sells, target()))
-    source = FakeSource([make_ad("nuevo", "800", "BUY")], sells)
-    service = MonitorService(source, [], [], revalidations=queue)
-    asyncio.run(service.process_revalidation([target()]))
-    result, error = queue.finished[0]
-    assert not error and result["state"] == "not_observed"
-    assert result["route"] is None and result["alternative"]["buy"]["adv_no"] == "nuevo"
-
-
-def test_revalidacion_rechaza_configuracion_obsoleta_sin_red():
-    buys, sells = [make_ad("b", "800", "BUY")], [make_ad("s", "820", "SELL")]
-    queue = FakeQueue(request_payload(buys, sells, target()))
-    source = FakeSource(buys, sells)
-    service = MonitorService(source, [], [], revalidations=queue)
-    asyncio.run(service.process_revalidation([target(max_fiat=D("100"))]))
-    assert queue.finished[0][1] and source.calls == []
-
-
-def test_error_no_se_convierte_en_libro_vacio():
-    class BrokenSource(FakeSource):
-        async def fetch_ads(self, **kwargs):
-            raise TimeoutError("error de red")
-
-    buys, sells = [make_ad("b", "800", "BUY")], [make_ad("s", "820", "SELL")]
-    observer = FakeObserver()
-    queue = FakeQueue(request_payload(buys, sells, target()))
-    service = MonitorService(BrokenSource([], []), [], [], observer=observer, revalidations=queue)
-    import pytest
-    with pytest.raises(TimeoutError):
-        asyncio.run(service.run_cycle(target()))
-    assert observer.records == [] and len(observer.errors) == 1
-    asyncio.run(service.process_revalidation([target()]))
-    assert queue.finished[0][1]

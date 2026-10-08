@@ -52,7 +52,6 @@
     <span class="kpi-label">Ganancia estimada (24 h)</span>
     <span class="kpi-value pos">~{{ '%.2f'|format(stats.total_profit_fiat) }} {{ stats.fiat }} / {% if stats.total_profit_usd is not none %}~{{ '%.2f'|format(stats.total_profit_usd) }} USD{% else %}— USD{% endif %}</span>
     <span class="muted small">1 USDT ≈ 1 USD · otras criptos: última tasa USDT registrada.</span>
-    <span class="muted small">Suma de estimaciones históricas; las detecciones repetidas no son ganancias acumulables.</span>
     <span class="muted small">
       {% if stats.last_detection %}detecciones, no operaciones · {{ stats.last_detection_local }}{% else %}—{% endif %}
     </span>

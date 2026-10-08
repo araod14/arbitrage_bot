@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from decimal import Decimal, InvalidOperation
 
 from rich.console import Console
 
 from .application.monitor import MonitorService
-from .config import SUPPORTED_ASSETS, AppConfig, Defaults, validate_storage_paths
+from .config import SUPPORTED_ASSETS, AppConfig, Defaults
 from .domain.models import WatchTarget
 from .infrastructure.binance_p2p import BinanceP2PSource
 from .infrastructure.console_notifier import ConsoleNotifier
@@ -23,8 +22,6 @@ from .infrastructure.discovery import discover_pay_methods
 from .infrastructure.screenshot_notifier import ScreenshotNotifier
 from .infrastructure.sqlite_repo import SQLiteRepository
 from .infrastructure.status_notifier import StatusNotifier
-from .infrastructure.market_store import MarketStore
-from .infrastructure.control_store import ControlStore
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -211,18 +208,9 @@ async def build_config(source: BinanceP2PSource, defaults: Defaults) -> AppConfi
 async def amain(defaults: Defaults) -> None:
     source = BinanceP2PSource(impersonate=defaults.impersonate, proxy=defaults.proxy)
     repo: SQLiteRepository | None = None
-    market: MarketStore | None = None
     try:
         config = await build_config(source, defaults)
-        validate_storage_paths(config.db_path, defaults.control_db_path,
-                               os.getenv("TRADES_DB_PATH") or "trades.db")
         repo = SQLiteRepository(config.db_path)
-        market = MarketStore(config.db_path, retention_days=defaults.market_retention_days,
-                             max_routes=defaults.market_max_routes)
-        queue = ControlStore(defaults.control_db_path, ttl_s=defaults.revalidation_ttl_s,
-                             cooldown_s=defaults.revalidation_cooldown_s,
-                             retention_days=defaults.market_retention_days,
-                             max_pending=defaults.revalidation_max_pending)
         notifier = ConsoleNotifier(beep=config.beep, console=console)
         status = StatusNotifier(config.status_path)
         shot = ScreenshotNotifier(
@@ -234,8 +222,6 @@ async def amain(defaults: Defaults) -> None:
             repositories=[repo],
             notifiers=[notifier, status, shot],
             poll_interval_s=config.poll_interval_s,
-            observer=market,
-            revalidations=queue,
         )
 
         methods_lbl = ", ".join(config.targets[0].pay_methods) or "todos"
@@ -253,8 +239,6 @@ async def amain(defaults: Defaults) -> None:
         await source.aclose()
         if repo is not None:
             repo.close()
-        if market is not None:
-            market.close()
         console.print("[dim]Conexiones cerradas.[/]")
 
 

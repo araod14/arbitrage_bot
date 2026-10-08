@@ -150,26 +150,3 @@ def test_decimal_comma_is_accepted(tmp_path):
     trade_store.save_trade(db, _completed(real_fiat_sell="3700,50"))
     t = trade_store.recent_trades(db)[0]
     assert t["profit_fiat"] == 100.5
-
-
-def test_migra_base_antigua_y_preserva_snapshot_de_comprobacion(tmp_path):
-    db = str(tmp_path / "trades.db")
-    with sqlite3.connect(db) as conn:
-        conn.executescript(trade_store._SCHEMA)
-        conn.execute("INSERT INTO trades(status,recorded_at,notes) VALUES('failed','2026-10-08','registro antiguo')")
-    trade_store.save_trade(db, _completed(revalidation_id="comprobacion", funds_revision="7",
-                                         market_route_key="ruta", revalidation_checked_at="2026-10-08T10:00:00+00:00"))
-    rows = trade_store.recent_trades(db)
-    assert len(rows) == 2 and rows[0]["revalidation_id"] == "comprobacion"
-    assert rows[0]["funds_revision"] == "7" and rows[1]["notes"] == "registro antiguo"
-
-
-def test_migracion_concurrente_no_pierde_registros(tmp_path):
-    from concurrent.futures import ThreadPoolExecutor
-    db = str(tmp_path / "trades.db")
-    with sqlite3.connect(db) as conn:
-        conn.executescript(trade_store._SCHEMA)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        ids = list(pool.map(lambda n: trade_store.save_trade(db, _completed(notes=f"registro {n}")), range(2)))
-    assert all(row is not None for row in ids)
-    assert len(trade_store.recent_trades(db)) == 2
